@@ -4,7 +4,7 @@ This project provides patches for Quobyte drivers in the different OpenStack pro
 
 ## Where is What
 
-Patches in this project are ordered by OpenStack release. A specific patch  version for the Mitaka release can be found at:
+Patches in this project are ordered by OpenStack releases. For example a specific patch  version for the Mitaka release can be found at:
 
     <patch-dir>/Mitaka
 
@@ -17,4 +17,11 @@ These patches can be applied by navigating to the project to be patched root dir
 
 # Contents
 
-- systemd-cgroup_patch: backports of a [https://review.openstack.org/#/c/432344/ Nova bugfix] for a [https://bugs.launchpad.net/nova/+bug/1530860 bug] that caused mounts to be removed when the Nova service was stopped or restarted.
+## systemd-cgroup_patch
+
+Backports of a [Nova bugfix](https://review.openstack.org/#/c/432344/) for a [bug](https://bugs.launchpad.net/nova/+bug/1530860) that caused mounts to be removed when the Nova service was stopped or restarted.
+
+__Important__: Installations that applied the previous [Nova Mitaka external mount patch](https://github.com/quobyte/nova_mitaka_external-mount_patch) patch for this issue have to remove this previous patch before applying the systemd-cgroup_patch!
+Removal can easily be done via:
+
+    patch -p1 -R < /path/to/patchfile
