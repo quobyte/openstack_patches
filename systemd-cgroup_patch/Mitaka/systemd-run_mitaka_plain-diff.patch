@@ -100,24 +100,18 @@ index 8d16cad..78f42da 100644
  
      @mock.patch.object(quobyte.LOG, "error")
      @mock.patch.object(utils, "execute")
-@@ -324,12 +359,14 @@ class LibvirtQuobyteVolumeDriverTestCase(
- 
-         libvirt_driver.disconnect_volume(connection_info, "vde")
- 
--    def test_libvirt_quobyte_driver_mount_non_quobyte_volume(self):
-+    @mock.patch.object(libvirt_utils, 'is_mounted', return_value=True)
-+    def test_libvirt_quobyte_driver_mount_non_quobyte_volume(self,
-+            mock_is_mounted):
+@@ -324,8 +359,8 @@ class LibvirtQuobyteVolumeDriverTestCase(
          mnt_base = '/mnt'
          self.flags(quobyte_mount_point_base=mnt_base, group='libvirt')
  
-         libvirt_driver = quobyte.LibvirtQuobyteVolumeDriver(self.fake_conn)
+-        libvirt_driver = quobyte.LibvirtQuobyteVolumeDriver(self.fake_host)
 -        export_string = 'quobyte://192.168.1.1/volume-00001'
++        libvirt_driver = quobyte.LibvirtQuobyteVolumeDriver(self.fake_conn)
 +        export_string = 'quobyte:192.168.1.1/volume-00001'
  
          connection_info = {'data': {'export': export_string,
                                      'name': self.name}}
-@@ -345,6 +382,8 @@ class LibvirtQuobyteVolumeDriverTestCase(
+@@ -341,6 +376,8 @@ class LibvirtQuobyteVolumeDriverTestCase(
                                libvirt_driver.connect_volume,
                                connection_info,
                                self.disk_info)
