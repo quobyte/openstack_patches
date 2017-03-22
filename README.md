@@ -25,3 +25,7 @@ __Important__: Installations that applied the previous [Nova Mitaka external mou
 Removal can easily be done via:
 
     patch -p1 -R < /path/to/patchfile
+
+## xattr-removal_patch
+
+Backports of performance optimizations that remove the usage of xattr from the Nova and Cinder drivers and mount Quobyte volumes without xattr support to improve iops.
