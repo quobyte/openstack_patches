@@ -104,9 +104,8 @@ index 8d16cad..78f42da 100644
          mnt_base = '/mnt'
          self.flags(quobyte_mount_point_base=mnt_base, group='libvirt')
  
--        libvirt_driver = quobyte.LibvirtQuobyteVolumeDriver(self.fake_host)
+         libvirt_driver = quobyte.LibvirtQuobyteVolumeDriver(self.fake_host)
 -        export_string = 'quobyte://192.168.1.1/volume-00001'
-+        libvirt_driver = quobyte.LibvirtQuobyteVolumeDriver(self.fake_conn)
 +        export_string = 'quobyte:192.168.1.1/volume-00001'
  
          connection_info = {'data': {'export': export_string,
