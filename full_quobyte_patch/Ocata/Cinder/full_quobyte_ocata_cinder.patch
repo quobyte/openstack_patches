@@ -1,3 +1,21 @@
+diff --git cinder/tests/unit/volume/drivers/test_quobyte.py cinder/tests/unit/volume/drivers/test_quobyte.py
+index de5169c..7856679 100644
+--- cinder/tests/unit/volume/drivers/test_quobyte.py
++++ cinder/tests/unit/volume/drivers/test_quobyte.py
+@@ -604,13 +604,11 @@ class QuobyteDriverTestCase(test.TestCase):
+ 
+         img_info = imageutils.QemuImgInfo(qemu_img_info_output)
+ 
+-        drv.get_active_image_from_info = mock.Mock(return_value=volume['name'])
+         image_utils.qemu_img_info = mock.Mock(return_value=img_info)
+         image_utils.resize_image = mock.Mock()
+ 
+         drv.extend_volume(volume, 3)
+ 
+-        drv.get_active_image_from_info.assert_called_once_with(volume)
+         image_utils.qemu_img_info.assert_called_once_with(volume_path,
+                                                           run_as_root=False)
+         image_utils.resize_image.assert_called_once_with(volume_path, 3)
 diff --git cinder/tests/unit/volume/drivers/test_remotefs.py cinder/tests/unit/volume/drivers/test_remotefs.py
 index 0cd2ad8..72d70f4 100644
 --- cinder/tests/unit/volume/drivers/test_remotefs.py
@@ -197,6 +215,75 @@ index 0cd2ad8..72d70f4 100644
  
      def test_create_regular_file(self):
          self._driver._create_regular_file('/path', 1)
+diff --git cinder/volume/drivers/quobyte.py cinder/volume/drivers/quobyte.py
+index 8d77e65..9d4086a 100644
+--- cinder/volume/drivers/quobyte.py
++++ cinder/volume/drivers/quobyte.py
+@@ -30,14 +30,14 @@ from cinder import interface
+ from cinder import utils
+ from cinder.volume.drivers import remotefs as remotefs_drv
+ 
+-VERSION = '1.1'
++VERSION = '1.1.5'
+ 
+ LOG = logging.getLogger(__name__)
+ 
+ volume_opts = [
+-    cfg.URIOpt('quobyte_volume_url',
+-               help=('URL to the Quobyte volume e.g.,'
+-                     ' quobyte://<DIR host>/<volume name>')),
++    cfg.StrOpt('quobyte_volume_url',
++               help=('Quobyte URL to the Quobyte volume e.g.,'
++                     ' quobyte://<DIR host1>, <DIR host2>/<volume name>')),
+     cfg.StrOpt('quobyte_client_cfg',
+                help=('Path to a Quobyte Client configuration file.')),
+     cfg.BoolOpt('quobyte_sparsed_volumes',
+@@ -79,6 +79,9 @@ class QuobyteDriver(remotefs_drv.RemoteFSSnapDriverDistributed):
+     Version history:
+         1.0   - Initial driver.
+         1.1   - Adds optional insecure NAS settings
++        1.1.2 - Fixes a bug in the creation of cloned volumes
++        1.1.4 - Fixes capability to configure redundancy in quobyte_volume_url
++        1.1.5 - Enables extension of volumes with snapshots
+     """
+ 
+     driver_volume_type = 'quobyte'
+@@ -172,7 +175,7 @@ class QuobyteDriver(remotefs_drv.RemoteFSSnapDriverDistributed):
+     @utils.synchronized('quobyte', external=False)
+     def create_cloned_volume(self, volume, src_vref):
+         """Creates a clone of the specified volume."""
+-        self._create_cloned_volume(volume, src_vref)
++        return self._create_cloned_volume(volume, src_vref)
+ 
+     @utils.synchronized('quobyte', external=False)
+     def create_volume(self, volume):
+@@ -295,14 +298,6 @@ class QuobyteDriver(remotefs_drv.RemoteFSSnapDriverDistributed):
+     @utils.synchronized('quobyte', external=False)
+     def extend_volume(self, volume, size_gb):
+         volume_path = self.local_path(volume)
+-        volume_filename = os.path.basename(volume_path)
+-
+-        # Ensure no snapshots exist for the volume
+-        active_image = self.get_active_image_from_info(volume)
+-        if volume_filename != active_image:
+-            msg = _('Extend volume is only supported for this'
+-                    ' driver when no snapshots exist.')
+-            raise exception.InvalidVolume(msg)
+ 
+         info = self._qemu_img_info(volume_path, volume.name)
+         backing_fmt = info.file_format
+@@ -312,7 +307,10 @@ class QuobyteDriver(remotefs_drv.RemoteFSSnapDriverDistributed):
+             raise exception.InvalidVolume(msg % backing_fmt)
+ 
+         # qemu-img can resize both raw and qcow2 files
+-        image_utils.resize_image(volume_path, size_gb)
++        active_path = os.path.join(
++            self._get_mount_point_for_share(volume.provider_location),
++            self.get_active_image_from_info(volume))
++        image_utils.resize_image(active_path, size_gb)
+ 
+     def _do_create_volume(self, volume):
+         """Create a volume on given Quobyte volume.
 diff --git cinder/volume/drivers/remotefs.py cinder/volume/drivers/remotefs.py
 index 6f07cb9..e76c945 100644
 --- cinder/volume/drivers/remotefs.py

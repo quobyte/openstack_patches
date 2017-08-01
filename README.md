@@ -19,6 +19,10 @@ Please see the different patches readme files for their respective installation 
 
 # Contents
 
+## Full Quobyte Patch
+
+These patches provides an all in one patch file per project for easier installation. These patch files correct a list of issues/features, including single issue fix patches availabe in this repository.
+
 ## systemd-cgroup_patch
 
 Backport of a [Nova bugfix](https://review.openstack.org/#/c/432344/) for a [bug](https://bugs.launchpad.net/nova/+bug/1530860) that caused mounts to be removed when the Nova service was stopped or restarted.
