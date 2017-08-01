@@ -26,6 +26,17 @@ Removal can easily be done via:
 
     patch -p1 -R < /path/to/patchfile
 
+## truncate-ephemeral_patch
+
+This patch changes Nova ephemeral image prealloc behaviour by running truncate instead of fallocate. This improves performance with ephemeral images on Quobyte volumes.
+This change is compatible with other backends with a possible performance impact.
+
+### Usage
+
+This patch can be applied by navigating to the Nova project root directory and running:
+
+    patch -p0 < /path/to/patchfile
+
 ## xattr-removal_patch
 
 Backports of performance optimizations that remove the usage of xattr from the Nova driver and mount Quobyte volumes without xattr support, in order to improve iops. This patch comes in two flavors:
