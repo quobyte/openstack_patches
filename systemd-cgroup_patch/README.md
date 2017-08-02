@@ -12,5 +12,13 @@ Removal can easily be done via:
 
 These patches can be applied by navigating to the project to be patched root directory and running:
 
-    patch -p1 < /path/to/patchfile
+    patch -p0 < /path/to/patchfile
 
+
+### Changelog
+
+
+#### 1.0
+	- mounts no longer as root but as Nova service user
+
+#### original release
