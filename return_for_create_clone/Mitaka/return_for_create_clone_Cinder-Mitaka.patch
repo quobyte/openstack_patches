@@ -1,0 +1,13 @@
+diff --git cinder/volume/drivers/quobyte.py cinder/volume/drivers/quobyte.py
+index 18946be..05fc01a 100644
+--- cinder/volume/drivers/quobyte.py
++++ cinder/volume/drivers/quobyte.py
+@@ -167,7 +167,7 @@ class QuobyteDriver(remotefs_drv.RemoteFSSnapDriver):
+     @utils.synchronized('quobyte', external=False)
+     def create_cloned_volume(self, volume, src_vref):
+         """Creates a clone of the specified volume."""
+-        self._create_cloned_volume(volume, src_vref)
++        return self._create_cloned_volume(volume, src_vref)
+ 
+     @utils.synchronized('quobyte', external=False)
+     def create_volume(self, volume):
