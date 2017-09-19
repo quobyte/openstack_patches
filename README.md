@@ -23,15 +23,25 @@ Please see the different patches readme files for their respective installation 
 
 These patches provides an all in one patch file per project for easier installation. These patch files correct a list of issues/features, including single issue fix patches availabe in this repository.
 
+## return_for_create_clone_patch
+
+Small patch that enables volume backups via volume cloning with Quobyte volumes. This change is part of the upstream code for releases Pike and newer.
+
 ## systemd-cgroup_patch
 
 Backport of a [Nova bugfix](https://review.openstack.org/#/c/432344/) for a [bug](https://bugs.launchpad.net/nova/+bug/1530860) that caused mounts to be removed when the Nova service was stopped or restarted.
+This patch is part of the upstream code fore releases Pike and newer.
 
 ## truncate-ephemeral_patch
 
 This patch changes Nova ephemeral image prealloc behaviour by running truncate instead of fallocate. This improves performance with ephemeral images on Quobyte volumes.
 This change is compatible with other backends with a possible performance impact.
 
+## volume_from_snapshot_cache_patch (**beta**)
+
+Backport of the upstream changes for the [volume_from_snapshot_cache](https://review.openstack.org/#/c/502974/9) and some [general volume creation optimizations](https://review.openstack.org/#/c/500782/) for Cinder.
+
 ## xattr-removal_patch
 
-Backports of performance optimizations that remove the usage of xattr from the Nova driver and mount Quobyte volumes without xattr support, in order to improve iops. 
+Backports of performance optimizations that remove the usage of xattr from the Nova driver and mount Quobyte volumes without xattr support, in order to improve iops.
+This patch is part of the upstream code fore releases Pike and newer.

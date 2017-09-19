@@ -8,6 +8,9 @@ Removal can easily be done via:
 
     patch -p1 -R < /path/to/patchfile
 
+
+This patch is part of the upstream code fore releases Pike and newer.
+
 ### Usage
 
 These patches can be applied by navigating to the project to be patched root directory and running:
