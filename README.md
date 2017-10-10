@@ -37,10 +37,6 @@ This patch is part of the upstream code fore releases Pike and newer.
 This patch changes Nova ephemeral image prealloc behaviour by running truncate instead of fallocate. This improves performance with ephemeral images on Quobyte volumes.
 This change is compatible with other backends with a possible performance impact.
 
-## volume_from_snapshot_cache_patch (**beta**)
-
-Backport of the upstream changes for the [volume_from_snapshot_cache](https://review.openstack.org/#/c/502974/9) and some [general volume creation optimizations](https://review.openstack.org/#/c/500782/) for Cinder.
-
 ## overlay_volume_patch (**beta**)
 
 Backport of the upstream changes for [overlay volumes](https://review.openstack.org/#/c/507050), the [volume_from_snapshot_cache](https://review.openstack.org/#/c/502974/9) and some [general volume creation optimizations](https://review.openstack.org/#/c/500782/) for Cinder.
