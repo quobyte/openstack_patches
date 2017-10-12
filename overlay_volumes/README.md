@@ -7,7 +7,7 @@ The corresponding [upstream change](https://review.openstack.org/#/c/507050/12) 
 
 ### Usage
 
-This patch can be applied by navigating to the Nova project root directory and running:
+This patch can be applied by navigating to the Cinder project root directory and running:
 
     patch -p0 < /path/to/patchfile
 
