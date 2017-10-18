@@ -1,0 +1,583 @@
+diff --git cinder/tests/unit/volume/drivers/test_quobyte.py cinder/tests/unit/volume/drivers/test_quobyte.py
+index de5169c..20a8973 100644
+--- cinder/tests/unit/volume/drivers/test_quobyte.py
++++ cinder/tests/unit/volume/drivers/test_quobyte.py
+@@ -17,6 +17,7 @@
+ 
+ import errno
+ import os
++import psutil
+ import six
+ import traceback
+ 
+@@ -100,6 +101,12 @@ class QuobyteDriverTestCase(test.TestCase):
+         if not caught:
+             self.fail('Expected raised exception but nothing caught.')
+ 
++    def get_mock_partitions(self):
++        mypart = mock.Mock()
++        mypart.device = "quobyte@"
++        mypart.mountpoint = self.TEST_MNT_POINT
++        return [mypart]
++
+     def test_local_path(self):
+         """local_path common use case."""
+         drv = self._driver
+@@ -113,7 +120,9 @@ class QuobyteDriverTestCase(test.TestCase):
+     def test_mount_quobyte_should_mount_correctly(self):
+         with mock.patch.object(self._driver, '_execute') as mock_execute, \
+                 mock.patch('cinder.volume.drivers.quobyte.QuobyteDriver'
+-                           '.read_proc_mount') as mock_open:
++                           '.read_proc_mount') as mock_open, \
++                mock.patch('cinder.volume.drivers.quobyte.QuobyteDriver'
++                           '._validate_volume') as mock_validate:
+             # Content of /proc/mount (not mounted yet).
+             mock_open.return_value = six.StringIO(
+                 "/dev/sda5 / ext4 rw,relatime,data=ordered 0 0")
+@@ -127,17 +136,15 @@ class QuobyteDriverTestCase(test.TestCase):
+                 'mount.quobyte', self.TEST_QUOBYTE_VOLUME,
+                 self.TEST_MNT_POINT, run_as_root=False)
+ 
+-            getfattr_call = mock.call(
+-                'getfattr', '-n', 'quobyte.info', self.TEST_MNT_POINT,
+-                run_as_root=False)
+-
+             mock_execute.assert_has_calls(
+-                [mkdir_call, mount_call, getfattr_call], any_order=False)
++                [mkdir_call, mount_call], any_order=False)
++            mock_validate.called_once_with(self.TEST_MNT_POINT)
+ 
+     def test_mount_quobyte_already_mounted_detected_seen_in_proc_mount(self):
+-        with mock.patch.object(self._driver, '_execute') as mock_execute, \
++        with mock.patch('cinder.volume.drivers.quobyte.QuobyteDriver'
++                        '.read_proc_mount') as mock_open, \
+                 mock.patch('cinder.volume.drivers.quobyte.QuobyteDriver'
+-                           '.read_proc_mount') as mock_open:
++                           '._validate_volume') as mock_validate:
+             # Content of /proc/mount (already mounted).
+             mock_open.return_value = six.StringIO(
+                 "quobyte@%s %s fuse rw,nosuid,nodev,noatime,user_id=1000"
+@@ -146,10 +153,7 @@ class QuobyteDriverTestCase(test.TestCase):
+ 
+             self._driver._mount_quobyte(self.TEST_QUOBYTE_VOLUME,
+                                         self.TEST_MNT_POINT)
+-
+-            mock_execute.assert_called_once_with(
+-                'getfattr', '-n', 'quobyte.info', self.TEST_MNT_POINT,
+-                run_as_root=False)
++            mock_validate.assert_called_once_with(self.TEST_MNT_POINT)
+ 
+     def test_mount_quobyte_should_suppress_and_log_already_mounted_error(self):
+         """test_mount_quobyte_should_suppress_and_log_already_mounted_error
+@@ -604,13 +608,11 @@ class QuobyteDriverTestCase(test.TestCase):
+ 
+         img_info = imageutils.QemuImgInfo(qemu_img_info_output)
+ 
+-        drv.get_active_image_from_info = mock.Mock(return_value=volume['name'])
+         image_utils.qemu_img_info = mock.Mock(return_value=img_info)
+         image_utils.resize_image = mock.Mock()
+ 
+         drv.extend_volume(volume, 3)
+ 
+-        drv.get_active_image_from_info.assert_called_once_with(volume)
+         image_utils.qemu_img_info.assert_called_once_with(volume_path,
+                                                           run_as_root=False)
+         image_utils.resize_image.assert_called_once_with(volume_path, 3)
+@@ -928,3 +930,84 @@ class QuobyteDriverTestCase(test.TestCase):
+         self.assertEqual("true",
+                          drv.configuration.nas_secure_file_permissions)
+         self.assertFalse(drv._execute_as_root)
++
++    @mock.patch.object(psutil, "disk_partitions")
++    @mock.patch.object(os, "stat")
++    def test_validate_volume_all_good(self, stat_mock, part_mock):
++        part_mock.return_value = self.get_mock_partitions()
++        drv = self._driver
++
++        def statMockCall(*args):
++            if args[0] == self.TEST_MNT_POINT:
++                stat_result = mock.Mock()
++                stat_result.st_size = 0
++                return stat_result
++            return os.stat(args)
++
++        stat_mock.side_effect = statMockCall
++
++        drv._validate_volume(self.TEST_MNT_POINT)
++
++        stat_mock.assert_called_once_with(self.TEST_MNT_POINT)
++        part_mock.assert_called_once_with(all=True)
++
++    @mock.patch.object(psutil, "disk_partitions")
++    @mock.patch.object(os, "stat")
++    def test_validate_volume_mount_not_working(self, stat_mock, part_mock):
++        part_mock.return_value = self.get_mock_partitions()
++        drv = self._driver
++
++        def statMockCall(*args):
++            if args[0] == self.TEST_MNT_POINT:
++                raise exception.VolumeDriverException()
++
++        stat_mock.side_effect = [statMockCall, os.stat]
++
++        self.assertRaises(
++            exception.VolumeDriverException,
++            drv._validate_volume,
++            self.TEST_MNT_POINT)
++        stat_mock.assert_called_once_with(self.TEST_MNT_POINT)
++        part_mock.assert_called_once_with(all=True)
++
++    def test_validate_volume_no_mtab_entry(self):
++        msg = ("Volume driver reported an error: "
++               "No matching Quobyte mount entry for %(mpt)s"
++               " could be found for validation in partition list."
++               % {'mpt': self.TEST_MNT_POINT})
++
++        self.assertRaisesAndMessageMatches(
++            exception.VolumeDriverException,
++            msg,
++            self._driver._validate_volume,
++            self.TEST_MNT_POINT)
++
++    @mock.patch.object(psutil, "disk_partitions")
++    def test_validate_volume_wrong_mount_type(self, part_mock):
++        mypart = mock.Mock()
++        mypart.device = "not-quobyte"
++        mypart.mountpoint = self.TEST_MNT_POINT
++        part_mock.return_value = [mypart]
++        msg = ("Volume driver reported an error: "
++               "The mount %(mpt)s is not a valid"
++               " Quobyte volume according to partition list."
++               % {'mpt': self.TEST_MNT_POINT})
++        drv = self._driver
++
++        self.assertRaisesAndMessageMatches(
++            exception.VolumeDriverException,
++            msg,
++            drv._validate_volume,
++            self.TEST_MNT_POINT)
++        part_mock.assert_called_once_with(all=True)
++
++    @mock.patch.object(psutil, "disk_partitions")
++    def test_validate_volume_stale_mount(self, part_mock):
++        part_mock.return_value = self.get_mock_partitions()
++        drv = self._driver
++
++        # As this uses a local fs dir size is >0, raising an exception
++        self.assertRaises(
++            exception.VolumeDriverException,
++            drv._validate_volume,
++            self.TEST_MNT_POINT)
+diff --git cinder/tests/unit/volume/drivers/test_remotefs.py cinder/tests/unit/volume/drivers/test_remotefs.py
+index 0cd2ad8..72d70f4 100644
+--- cinder/tests/unit/volume/drivers/test_remotefs.py
++++ cinder/tests/unit/volume/drivers/test_remotefs.py
+@@ -52,9 +52,26 @@ class RemoteFsSnapDriverTestCase(test.TestCase):
+                                     self._fake_snapshot.id)
+         self._fake_snapshot.volume = self._fake_volume
+ 
++    @ddt.data({'current_state': 'in-use',
++               'acceptable_states': ['available', 'in-use']},
++              {'current_state': 'in-use',
++               'acceptable_states': ['available'],
++               'expected_exception': exception.InvalidVolume})
++    @ddt.unpack
++    def test_validate_state(self, current_state, acceptable_states,
++                            expected_exception=None):
++        if expected_exception:
++            self.assertRaises(expected_exception,
++                              self._driver._validate_state,
++                              current_state,
++                              acceptable_states)
++        else:
++            self._driver._validate_state(current_state, acceptable_states)
++
+     def _test_delete_snapshot(self, volume_in_use=False,
+                               stale_snapshot=False,
+-                              is_active_image=True):
++                              is_active_image=True,
++                              is_tmp_snap=False):
+         # If the snapshot is not the active image, it is guaranteed that
+         # another snapshot exists having it as backing file.
+ 
+@@ -78,6 +95,7 @@ class RemoteFsSnapDriverTestCase(test.TestCase):
+         self._driver._local_volume_dir = mock.Mock(
+             return_value=self._FAKE_MNT_POINT)
+ 
++        self._driver._validate_state = mock.Mock()
+         self._driver._read_info_file = mock.Mock()
+         self._driver._write_info_file = mock.Mock()
+         self._driver._img_commit = mock.Mock()
+@@ -91,12 +109,18 @@ class RemoteFsSnapDriverTestCase(test.TestCase):
+             self._fake_snapshot.id: fake_snapshot_name
+         }
+ 
++        exp_acceptable_states = ['available', 'in-use', 'backing-up',
++                                 'deleting', 'downloading']
++
+         if volume_in_use:
+             self._fake_snapshot.volume.status = 'in-use'
+ 
+             self._driver._read_info_file.return_value = fake_info
+ 
+             self._driver._delete_snapshot(self._fake_snapshot)
++            self._driver._validate_state.assert_called_once_with(
++                self._fake_snapshot.volume.status,
++                exp_acceptable_states)
+             if stale_snapshot:
+                 self._driver._delete_stale_snapshot.assert_called_once_with(
+                     self._fake_snapshot)
+@@ -228,7 +252,7 @@ class RemoteFsSnapDriverTestCase(test.TestCase):
+                  mock.call(*command3, run_as_root=True)]
+         self._driver._execute.assert_has_calls(calls)
+ 
+-    def _test_create_snapshot(self, volume_in_use=False):
++    def _test_create_snapshot(self, volume_in_use=False, tmp_snap=False):
+         fake_snapshot_info = {}
+         fake_snapshot_file_name = os.path.basename(self._fake_snapshot_path)
+ 
+@@ -243,11 +267,16 @@ class RemoteFsSnapDriverTestCase(test.TestCase):
+             return_value=self._fake_volume.name)
+         self._driver._get_new_snap_path = mock.Mock(
+             return_value=self._fake_snapshot_path)
++        self._driver._validate_state = mock.Mock()
+ 
+         expected_snapshot_info = {
+             'active': fake_snapshot_file_name,
+             self._fake_snapshot.id: fake_snapshot_file_name
+         }
++        exp_acceptable_states = ['available', 'in-use', 'backing-up']
++        if tmp_snap:
++            exp_acceptable_states.append('downloading')
++            self._fake_snapshot.id = 'tmp-snap-%s' % self._fake_snapshot.id
+ 
+         if volume_in_use:
+             self._fake_snapshot.volume.status = 'in-use'
+@@ -258,6 +287,9 @@ class RemoteFsSnapDriverTestCase(test.TestCase):
+ 
+         self._driver._create_snapshot(self._fake_snapshot)
+ 
++        self._driver._validate_state.assert_called_once_with(
++            self._fake_snapshot.volume.status,
++            exp_acceptable_states)
+         fake_method = getattr(self._driver, expected_method_called)
+         fake_method.assert_called_with(
+             self._fake_snapshot, self._fake_volume.name,
+@@ -428,52 +460,59 @@ class RemoteFsSnapDriverTestCase(test.TestCase):
+                                  basedir=basedir,
+                                  valid_backing_file=False)
+ 
+-    def test_create_cloned_volume(self):
++    @mock.patch.object(remotefs.RemoteFSSnapDriver,
++                       '_validate_state')
++    @mock.patch.object(remotefs.RemoteFSSnapDriver, '_create_snapshot')
++    @mock.patch.object(remotefs.RemoteFSSnapDriver, '_delete_snapshot')
++    @mock.patch.object(remotefs.RemoteFSSnapDriver,
++                       '_copy_volume_from_snapshot')
++    def test_create_cloned_volume(self, mock_copy_volume_from_snapshot,
++                                  mock_delete_snapshot,
++                                  mock_create_snapshot,
++                                  mock_validate_state):
+         drv = self._driver
+ 
+-        with mock.patch.object(drv, '_create_snapshot') as \
+-                mock_create_snapshot,\
+-                mock.patch.object(drv, '_delete_snapshot') as \
+-                mock_delete_snapshot,\
+-                mock.patch.object(drv, '_copy_volume_from_snapshot') as \
+-                mock_copy_volume_from_snapshot:
+-
+-            volume = fake_volume.fake_volume_obj(self.context)
+-            src_vref_id = '375e32b2-804a-49f2-b282-85d1d5a5b9e1'
+-            src_vref = fake_volume.fake_volume_obj(
+-                self.context,
+-                id=src_vref_id,
+-                name='volume-%s' % src_vref_id)
+-
+-            vol_attrs = ['provider_location', 'size', 'id', 'name', 'status',
+-                         'volume_type', 'metadata']
+-            Volume = collections.namedtuple('Volume', vol_attrs)
+-
+-            snap_attrs = ['volume_name', 'volume_size', 'name',
+-                          'volume_id', 'id', 'volume']
+-            Snapshot = collections.namedtuple('Snapshot', snap_attrs)
+-
+-            volume_ref = Volume(id=volume.id,
+-                                name=volume.name,
+-                                status=volume.status,
+-                                provider_location=volume.provider_location,
+-                                size=volume.size,
+-                                volume_type=volume.volume_type,
+-                                metadata=volume.metadata)
+-
+-            snap_ref = Snapshot(volume_name=volume.name,
+-                                name='clone-snap-%s' % src_vref.id,
+-                                volume_size=src_vref.size,
+-                                volume_id=src_vref.id,
+-                                id='tmp-snap-%s' % src_vref.id,
+-                                volume=src_vref)
+-
+-            drv.create_cloned_volume(volume, src_vref)
+-
+-            mock_create_snapshot.assert_called_once_with(snap_ref)
+-            mock_copy_volume_from_snapshot.assert_called_once_with(
+-                snap_ref, volume_ref, volume['size'])
+-            self.assertTrue(mock_delete_snapshot.called)
++        volume = fake_volume.fake_volume_obj(self.context)
++        src_vref_id = '375e32b2-804a-49f2-b282-85d1d5a5b9e1'
++        src_vref = fake_volume.fake_volume_obj(
++            self.context,
++            id=src_vref_id,
++            name='volume-%s' % src_vref_id)
++
++        vol_attrs = ['provider_location', 'size', 'id', 'name', 'status',
++                     'volume_type', 'metadata']
++        Volume = collections.namedtuple('Volume', vol_attrs)
++
++        snap_attrs = ['volume_name', 'volume_size', 'name',
++                      'volume_id', 'id', 'volume']
++        Snapshot = collections.namedtuple('Snapshot', snap_attrs)
++
++        volume_ref = Volume(id=volume.id,
++                            name=volume.name,
++                            status=volume.status,
++                            provider_location=volume.provider_location,
++                            size=volume.size,
++                            volume_type=volume.volume_type,
++                            metadata=volume.metadata)
++
++        snap_ref = Snapshot(volume_name=volume.name,
++                            name='clone-snap-%s' % src_vref.id,
++                            volume_size=src_vref.size,
++                            volume_id=src_vref.id,
++                            id='tmp-snap-%s' % src_vref.id,
++                            volume=src_vref)
++
++        drv.create_cloned_volume(volume, src_vref)
++
++        exp_acceptable_states = ['available', 'backing-up', 'downloading']
++        mock_validate_state.assert_called_once_with(
++            src_vref.status,
++            exp_acceptable_states,
++            obj_description='source volume')
++        mock_create_snapshot.assert_called_once_with(snap_ref)
++        mock_copy_volume_from_snapshot.assert_called_once_with(
++            snap_ref, volume_ref, volume['size'])
++        self.assertTrue(mock_delete_snapshot.called)
+ 
+     def test_create_regular_file(self):
+         self._driver._create_regular_file('/path', 1)
+diff --git cinder/volume/drivers/quobyte.py cinder/volume/drivers/quobyte.py
+index 8d77e65..32d4021 100644
+--- cinder/volume/drivers/quobyte.py
++++ cinder/volume/drivers/quobyte.py
+@@ -16,6 +16,7 @@
+ 
+ import errno
+ import os
++import psutil
+ 
+ from oslo_concurrency import processutils
+ from oslo_config import cfg
+@@ -30,14 +31,14 @@ from cinder import interface
+ from cinder import utils
+ from cinder.volume.drivers import remotefs as remotefs_drv
+ 
+-VERSION = '1.1'
++VERSION = '1.1.5'
+ 
+ LOG = logging.getLogger(__name__)
+ 
+ volume_opts = [
+-    cfg.URIOpt('quobyte_volume_url',
+-               help=('URL to the Quobyte volume e.g.,'
+-                     ' quobyte://<DIR host>/<volume name>')),
++    cfg.StrOpt('quobyte_volume_url',
++               help=('Quobyte URL to the Quobyte volume e.g.,'
++                     ' quobyte://<DIR host1>, <DIR host2>/<volume name>')),
+     cfg.StrOpt('quobyte_client_cfg',
+                help=('Path to a Quobyte Client configuration file.')),
+     cfg.BoolOpt('quobyte_sparsed_volumes',
+@@ -79,6 +80,10 @@ class QuobyteDriver(remotefs_drv.RemoteFSSnapDriverDistributed):
+     Version history:
+         1.0   - Initial driver.
+         1.1   - Adds optional insecure NAS settings
++        1.1.1 - Removes getfattr calls from driver
++        1.1.2 - Fixes a bug in the creation of cloned volumes
++        1.1.4 - Fixes capability to configure redundancy in quobyte_volume_url
++        1.1.5 - Enables extension of volumes with snapshots
+     """
+ 
+     driver_volume_type = 'quobyte'
+@@ -172,7 +177,7 @@ class QuobyteDriver(remotefs_drv.RemoteFSSnapDriverDistributed):
+     @utils.synchronized('quobyte', external=False)
+     def create_cloned_volume(self, volume, src_vref):
+         """Creates a clone of the specified volume."""
+-        self._create_cloned_volume(volume, src_vref)
++        return self._create_cloned_volume(volume, src_vref)
+ 
+     @utils.synchronized('quobyte', external=False)
+     def create_volume(self, volume):
+@@ -295,14 +300,6 @@ class QuobyteDriver(remotefs_drv.RemoteFSSnapDriverDistributed):
+     @utils.synchronized('quobyte', external=False)
+     def extend_volume(self, volume, size_gb):
+         volume_path = self.local_path(volume)
+-        volume_filename = os.path.basename(volume_path)
+-
+-        # Ensure no snapshots exist for the volume
+-        active_image = self.get_active_image_from_info(volume)
+-        if volume_filename != active_image:
+-            msg = _('Extend volume is only supported for this'
+-                    ' driver when no snapshots exist.')
+-            raise exception.InvalidVolume(msg)
+ 
+         info = self._qemu_img_info(volume_path, volume.name)
+         backing_fmt = info.file_format
+@@ -312,7 +309,10 @@ class QuobyteDriver(remotefs_drv.RemoteFSSnapDriverDistributed):
+             raise exception.InvalidVolume(msg % backing_fmt)
+ 
+         # qemu-img can resize both raw and qcow2 files
+-        image_utils.resize_image(volume_path, size_gb)
++        active_path = os.path.join(
++            self._get_mount_point_for_share(volume.provider_location),
++            self.get_active_image_from_info(volume))
++        image_utils.resize_image(active_path, size_gb)
+ 
+     def _do_create_volume(self, volume):
+         """Create a volume on given Quobyte volume.
+@@ -465,16 +465,40 @@ class QuobyteDriver(remotefs_drv.RemoteFSSnapDriverDistributed):
+             self._validate_volume(mount_path)
+ 
+     def _validate_volume(self, mount_path):
+-        """Wraps execute calls for checking validity of a Quobyte volume"""
+-        command = ['getfattr', "-n", "quobyte.info", mount_path]
+-        try:
+-            self._execute(*command, run_as_root=self._execute_as_root)
+-        except processutils.ProcessExecutionError as exc:
+-            msg = (_("The mount %(mount_path)s is not a valid"
+-                     " Quobyte USP volume. Error: %(exc)s")
+-                   % {'mount_path': mount_path, 'exc': exc})
+-            raise exception.VolumeDriverException(msg)
+-
+-        if not os.access(mount_path, os.W_OK | os.X_OK):
+-            LOG.warning(_LW("Volume is not writable. Please broaden the file"
+-                            " permissions. Mount: %s"), mount_path)
++        """Runs a number of tests on the expect Quobyte mount"""
++        partitions = psutil.disk_partitions(all=True)
++        for p in partitions:
++            if mount_path == p.mountpoint:
++                if p.device.startswith("quobyte@"):
++                    try:
++                        statresult = os.stat(mount_path)
++                        if statresult.st_size == 0:
++                            # client looks healthy
++                            if not os.access(mount_path,
++                                             os.W_OK | os.X_OK):
++                                LOG.warning(_LW("Volume is not writable. "
++                                                "Please broaden the file"
++                                                " permissions."
++                                                " Mount: %s"),
++                                            mount_path)
++                            return  # we're happy here
++                        else:
++                            msg = (_("The mount %(mount_path)s is not a "
++                                     "valid Quobyte volume. Stale mount?")
++                                   % {'mount_path': mount_path})
++                        raise exception.VolumeDriverException(msg)
++                    except Exception as exc:
++                        msg = (_("The mount %(mount_path)s is not a valid"
++                                 " Quobyte volume. Error: %(exc)s . "
++                                 " Possibly a Quobyte client crash?")
++                               % {'mount_path': mount_path, 'exc': exc})
++                        raise exception.VolumeDriverException(msg)
++                else:
++                    msg = (_("The mount %(mount_path)s is not a valid"
++                             " Quobyte volume according to partition list.")
++                           % {'mount_path': mount_path})
++                    raise exception.VolumeDriverException(msg)
++        msg = (_("No matching Quobyte mount entry for %(mount_path)s"
++                 " could be found for validation in partition list.")
++               % {'mount_path': mount_path})
++        raise exception.VolumeDriverException(msg)
+diff --git cinder/volume/drivers/remotefs.py cinder/volume/drivers/remotefs.py
+index 6f07cb9..e76c945 100644
+--- cinder/volume/drivers/remotefs.py
++++ cinder/volume/drivers/remotefs.py
+@@ -227,6 +227,23 @@ class RemoteFSDriver(driver.BaseVD):
+                   " mount_point_base.")
+         return None
+ 
++    @staticmethod
++    def _validate_state(current_state,
++                        acceptable_states,
++                        obj_description='volume',
++                        invalid_exc=exception.InvalidVolume):
++        if current_state not in acceptable_states:
++            message = _('Invalid %(obj_description)s state. '
++                        'Acceptable states for this operation: '
++                        '%(acceptable_states)s. '
++                        'Current %(obj_description)s state: '
++                        '%(current_state)s.')
++            raise invalid_exc(
++                message=message %
++                dict(obj_description=obj_description,
++                     acceptable_states=acceptable_states,
++                     current_state=current_state))
++
+     @utils.trace
+     def create_volume(self, volume):
+         """Creates a volume.
+@@ -937,12 +954,10 @@ class RemoteFSSnapDriverBase(RemoteFSDriver):
+                  {'src': src_vref.id,
+                   'dst': volume.id})
+ 
+-        if src_vref.status not in ['available', 'backing-up']:
+-            msg = _("Source volume status must be 'available', or "
+-                    "'backing-up' but is: "
+-                    "%(status)s.") % {'status': src_vref.status}
+-            raise exception.InvalidVolume(msg)
+-
++        acceptable_states = ['available', 'backing-up', 'downloading']
++        self._validate_state(src_vref.status,
++                             acceptable_states,
++                             obj_description='source volume')
+         volume_name = CONF.volume_name_template % volume.id
+ 
+         # Create fake volume and snapshot objects
+@@ -1017,12 +1032,9 @@ class RemoteFSSnapDriverBase(RemoteFSDriver):
+                             else 'offline')})
+ 
+         volume_status = snapshot.volume.status
+-        if volume_status not in ['available', 'in-use', 'backing-up']:
+-            msg = _("Volume status must be 'available', 'in-use' or "
+-                    "'backing-up' but is: "
+-                    "%(status)s.") % {'status': volume_status}
+-
+-            raise exception.InvalidVolume(msg)
++        acceptable_states = ['available', 'in-use', 'backing-up', 'deleting',
++                             'downloading']
++        self._validate_state(volume_status, acceptable_states)
+ 
+         vol_path = self._local_volume_dir(snapshot.volume)
+         self._ensure_share_writable(vol_path)
+@@ -1327,12 +1339,15 @@ class RemoteFSSnapDriverBase(RemoteFSDriver):
+                             else 'offline')})
+ 
+         status = snapshot.volume.status
+-        if status not in ['available', 'in-use', 'backing-up']:
+-            msg = _("Volume status must be 'available', 'in-use' or "
+-                    "'backing-up' but is: "
+-                    "%(status)s.") % {'status': status}
+ 
+-            raise exception.InvalidVolume(msg)
++        acceptable_states = ['available', 'in-use', 'backing-up']
++        if snapshot.id.startswith('tmp-snap-'):
++            # This is an internal volume snapshot. In order to support
++            # image caching, we'll allow creating/deleting such snapshots
++            # while having volumes in 'downloading' state.
++            acceptable_states.append('downloading')
++
++        self._validate_state(status, acceptable_states)
+ 
+         info_path = self._local_path_volume_info(snapshot.volume)
+         snap_info = self._read_info_file(info_path, empty_if_missing=True)

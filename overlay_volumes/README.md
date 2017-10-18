@@ -21,7 +21,7 @@ This patch can be applied by navigating to the Cinder project package root direc
     patch -p1 < /path/to/overlay_volumes_Cinder-Pike.patch
 
 
-#### Usage for the full source driver patch
+#### Usage for the full source tree driver patch
 
 This patch can be applied by navigating to the Cinder project source root directory and running:
 

@@ -17,9 +17,31 @@ When complete these patches contain all relevant fixes and changes for the given
     - Removes the requirement to support extended attributes from Nova mounts with patch [428646](https://review.openstack.org/#/c/428646/) for improved performance
     - Exchanges Nova fallocate on qcow2 ephemeral images with a truncate command for improved performance with Quobyte
 
+The patches come in two versions, the pure driver and the full source patch. For Cinder these are:
 
-### Usage
+1. _full_quobyte_ocata_cinder.patch_ - The pure driver patch for patching package based installations that strip tests and other development elements
+2. _full_quobyte_ocata_cinder_full_source_tree.patch_ - The full source patch including updates of unit tests and release notes files
 
-These patches can be applied by navigating to the project to be patched root directory and running:
+And for Nova:
+
+1. _full_quobyte_ocata_nova.patch_ - The pure driver patch for patching package based installations that strip tests and other development elements
+2. _full_quobyte_ocata_nova_full_source_tree.patch_ - The full source patch including updates of unit tests and release notes files
+
+### Installation
+
+#### Usage for the pure driver patches
+
+These patches can be applied by navigating to the respective project package root directory and running:
+
+    patch -p1 < /path/to/patchfile
+
+For __example__, to patch a cinder installation based on a stripped package run:
+
+    cd /usr/lib/python2.7/site-packages/cinder/
+    patch -p1 < /path/to/full_quobyte_ocata_cinder.patch
+
+#### Usage for the full source tree driver patches
+
+These patches can be applied by navigating to the respective project source root directory and running:
 
     patch -p0 < /path/to/patchfile
