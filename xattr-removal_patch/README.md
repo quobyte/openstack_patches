@@ -5,13 +5,13 @@ Backports of performance optimizations that remove the usage of xattr from the N
 
 Both flavors come in two versions, the vanilla release :
 
-1. _xattr-removal_Nova-<Release Name>.patch_ - The pure driver patch for patching package based installations that strip tests and other development elements
-2. _xattr-removal_<Release Name>-Mitaka_full_source_tree.patch_ - The full source patch including updates of unit tests and release notes files
+1. _xattr-removal_Nova-RELEASENAME.patch_ - The pure driver patch for patching package based installations that strip tests and other development elements
+2. _xattr-removal_RELEASENAME-Mitaka_full_source_tree.patch_ - The full source patch including updates of unit tests and release notes files
 
 And the _upon-systemd-run-patch_ versions:
 
-1. _xattr-removal_Nova-<Release Name>_upon-systemd-run-patch.patch_ - The pure driver patch for patching package based installations that strip tests and other development elements
-2. _xattr-removal_<Release Name>-Mitaka_upon-systemd-run-patch_full_source_tree.patch_ - The full source patch including updates of unit tests and release notes files
+1. _xattr-removal_Nova-RELEASENAME_upon-systemd-run-patch.patch_ - The pure driver patch for patching package based installations that strip tests and other development elements
+2. _xattr-removal_RELEASENAME-Mitaka_upon-systemd-run-patch_full_source_tree.patch_ - The full source patch including updates of unit tests and release notes files
 
 
 ### Installation

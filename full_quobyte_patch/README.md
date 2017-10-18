@@ -15,7 +15,6 @@ When complete these patches contain all relevant fixes and changes for the given
     - Fixes bug [1530860](https://bugs.launchpad.net/nova/+bug/1530860) with patch [432344](https://review.openstack.org/#/c/432344/) in order to prevent systemd service restarts from unmounting Nova mounts
     - Fixes bug [1679976](https://bugs.launchpad.net/nova/+bug/1679976) with patch [453537](https://review.openstack.org/#/c/453537/) disallowing a specific and potentially bad exit code during volume mounts
     - Removes the requirement to support extended attributes from Nova mounts with patch [428646](https://review.openstack.org/#/c/428646/) for improved performance
-    - Exchanges Nova fallocate on qcow2 ephemeral images with a truncate command for improved performance with Quobyte
 
 The patches come in two versions, the pure driver and the full source patch. For Cinder these are:
 

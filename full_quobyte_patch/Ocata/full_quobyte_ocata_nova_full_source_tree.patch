@@ -1,19 +1,3 @@
-diff --git nova/tests/unit/virt/libvirt/test_imagebackend.py nova/tests/unit/virt/libvirt/test_imagebackend.py
-index b3cc277..2c6dff9 100644
---- nova/tests/unit/virt/libvirt/test_imagebackend.py
-+++ nova/tests/unit/virt/libvirt/test_imagebackend.py
-@@ -120,9 +120,8 @@ class _ImageTestCase(object):
-             image.cache(fake_fetch, self.TEMPLATE_PATH, self.SIZE)
- 
-             self.assertEqual(fake_processutils.fake_execute_get_log(),
--                ['fallocate -l 1 %s.fallocate_test' % self.PATH,
--                 'fallocate -n -l %s %s' % (self.SIZE, self.PATH),
--                 'fallocate -n -l %s %s' % (self.SIZE, self.PATH)])
-+                ['truncate -s %s %s' % (self.SIZE, self.PATH),
-+                 'truncate -s %s %s' % (self.SIZE, self.PATH)])
- 
-     def test_prealloc_image_without_write_access(self):
-         CONF.set_override('preallocate_images', 'space')
 diff --git nova/tests/unit/virt/libvirt/volume/test_quobyte.py nova/tests/unit/virt/libvirt/volume/test_quobyte.py
 index a43a79a..7f867fa 100644
 --- nova/tests/unit/virt/libvirt/volume/test_quobyte.py
