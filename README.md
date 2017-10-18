@@ -32,11 +32,6 @@ Small patch that enables volume backups via volume cloning with Quobyte volumes.
 Backport of a [Nova bugfix](https://review.openstack.org/#/c/432344/) for a [bug](https://bugs.launchpad.net/nova/+bug/1530860) that caused mounts to be removed when the Nova service was stopped or restarted.
 This patch is part of the upstream code fore releases Pike and newer.
 
-## truncate-ephemeral_patch
-
-This patch changes Nova ephemeral image prealloc behaviour by running truncate instead of fallocate. This improves performance with ephemeral images on Quobyte volumes.
-This change is compatible with other backends with a possible performance impact.
-
 ## overlay_volume_patch (**beta**)
 
 Backport of the upstream changes for [overlay volumes](https://review.openstack.org/#/c/507050), the [volume_from_snapshot_cache](https://review.openstack.org/#/c/502974/9) and some [general volume creation optimizations](https://review.openstack.org/#/c/500782/) for Cinder.
@@ -45,3 +40,10 @@ Backport of the upstream changes for [overlay volumes](https://review.openstack.
 
 Backports of performance optimizations that remove the usage of xattr from the Nova driver and mount Quobyte volumes without xattr support, in order to improve iops.
 This patch is part of the upstream code fore releases Pike and newer.
+
+# Attic
+
+This contains a list of older patches that where removed.
+
+- truncate-ephemeral_patch: Removed due to possible stability issues
+- nova_mitaka_external-mount_patch: Superseeded by the systemd-cgroup_patch (see above)
