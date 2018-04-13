@@ -41,9 +41,13 @@ For __example__, to patch a cinder installation based on a stripped package run:
 
 #### Usage for the full source tree driver patches
 
-These patches can be applied by navigating to the respective project source root directory and running:
+These patches can be applied by navigating to the respective project source root directory and running for Cinder:
 
     patch -p0 < /path/to/patchfile
+
+And for Nova:
+
+    patch -p1 < /path/to/patchfile
 
 ### Changelog
 

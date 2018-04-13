@@ -1,7 +1,7 @@
 diff --git a/nova/virt/libvirt/imagebackend.py b/nova/virt/libvirt/imagebackend.py
 index 0f66888..8f42110 100644
---- a/nova/virt/libvirt/imagebackend.py
-+++ b/nova/virt/libvirt/imagebackend.py
+--- a/virt/libvirt/imagebackend.py
++++ b/virt/libvirt/imagebackend.py
 @@ -247,9 +247,11 @@ class Image(object):
              if os.path.exists(base) and size > self.get_disk_size(base):
                  self.resize_image(size)
@@ -19,8 +19,8 @@ index 0f66888..8f42110 100644
          """Check once per class, whether fallocate(1) is available,
 diff --git a/nova/virt/libvirt/volume/quobyte.py b/nova/virt/libvirt/volume/quobyte.py
 index 284a084..1d41f6f 100644
---- a/nova/virt/libvirt/volume/quobyte.py
-+++ b/nova/virt/libvirt/volume/quobyte.py
+--- a/virt/libvirt/volume/quobyte.py
++++ b/virt/libvirt/volume/quobyte.py
 @@ -19,6 +19,7 @@ import os
  from oslo_concurrency import processutils
  from oslo_log import log as logging
