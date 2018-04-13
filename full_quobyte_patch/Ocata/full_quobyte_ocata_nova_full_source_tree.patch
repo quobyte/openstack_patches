@@ -1,7 +1,7 @@
-diff --git nova/tests/unit/virt/libvirt/volume/test_quobyte.py nova/tests/unit/virt/libvirt/volume/test_quobyte.py
-index a43a79a..7f867fa 100644
---- nova/tests/unit/virt/libvirt/volume/test_quobyte.py
-+++ nova/tests/unit/virt/libvirt/volume/test_quobyte.py
+diff --git a/nova/tests/unit/virt/libvirt/volume/test_quobyte.py b/nova/tests/unit/virt/libvirt/volume/test_quobyte.py
+index a43a79a..0eb3e5e 100644
+--- a/nova/tests/unit/virt/libvirt/volume/test_quobyte.py
++++ b/nova/tests/unit/virt/libvirt/volume/test_quobyte.py
 @@ -15,12 +15,15 @@
  """Unit tests for the Quobyte volume driver module."""
  
@@ -58,18 +58,17 @@ index a43a79a..7f867fa 100644
          mnt_base = '/mnt'
          quobyte_volume = '192.168.1.1/volume-00001'
          export_mnt_base = os.path.join(mnt_base,
-@@ -43,17 +74,45 @@ class QuobyteTestCase(test.NoDBTestCase):
+@@ -43,17 +74,46 @@ class QuobyteTestCase(test.NoDBTestCase):
  
          mock_ensure_tree.assert_called_once_with(export_mnt_base)
          expected_commands = [mock.call('mount.quobyte',
 +                                       '--disable-xattrs',
-                                        quobyte_volume,
--                                       export_mnt_base,
--                                       check_exit_code=[0, 4])
-+                                       export_mnt_base)
++                                       quobyte_volume,
++                                       export_mnt_base,
++                                       run_as_root=True)
 +                             ]
 +        mock_execute.assert_has_calls(expected_commands)
-+        mock_exists.assert_called_once_with(" /run/systemd/system")
++        mock_exists.assert_called_once_with("/run/systemd/system")
 +
 +    @mock.patch.object(os.path, "exists", return_value=True)
 +    @mock.patch.object(fileutils, "ensure_tree")
@@ -87,14 +86,15 @@ index a43a79a..7f867fa 100644
 +        mock_ensure_tree.assert_called_once_with(export_mnt_base)
 +        expected_commands = [mock.call('systemd-run',
 +                                       '--scope',
-+                                       '--user',
 +                                       'mount.quobyte',
 +                                       '--disable-xattrs',
-+                                       quobyte_volume,
-+                                       export_mnt_base)
+                                        quobyte_volume,
+                                        export_mnt_base,
+-                                       check_exit_code=[0, 4])
++                                       run_as_root=True)
                               ]
          mock_execute.assert_has_calls(expected_commands)
-+        mock_exists.assert_called_once_with(" /run/systemd/system")
++        mock_exists.assert_called_once_with("/run/systemd/system")
  
 +    @mock.patch.object(os.path, "exists", return_value=False)
      @mock.patch.object(fileutils, "ensure_tree")
@@ -107,7 +107,7 @@ index a43a79a..7f867fa 100644
          mnt_base = '/mnt'
          quobyte_volume = '192.168.1.1/volume-00001'
          export_mnt_base = os.path.join(mnt_base,
-@@ -66,13 +125,14 @@ class QuobyteTestCase(test.NoDBTestCase):
+@@ -66,13 +126,15 @@ class QuobyteTestCase(test.NoDBTestCase):
  
          mock_ensure_tree.assert_called_once_with(export_mnt_base)
          expected_commands = [mock.call('mount.quobyte',
@@ -115,16 +115,26 @@ index a43a79a..7f867fa 100644
                                         quobyte_volume,
                                         export_mnt_base,
                                         '-c',
--                                       config_file_dummy,
+                                        config_file_dummy,
 -                                       check_exit_code=[0, 4])
-+                                       config_file_dummy)
++                                       run_as_root=True)
                               ]
          mock_execute.assert_has_calls(expected_commands)
-+        mock_exists.assert_called_once_with(" /run/systemd/system")
++        mock_exists.assert_called_once_with("/run/systemd/system")
  
      @mock.patch.object(fileutils, "ensure_tree")
      @mock.patch.object(utils, "execute",
-@@ -141,49 +201,91 @@ class QuobyteTestCase(test.NoDBTestCase):
+@@ -99,7 +161,8 @@ class QuobyteTestCase(test.NoDBTestCase):
+         quobyte.umount_volume(export_mnt_base)
+ 
+         mock_execute.assert_called_once_with('umount.quobyte',
+-                                             export_mnt_base)
++                                             export_mnt_base,
++                                             run_as_root=True)
+ 
+     @mock.patch.object(quobyte.LOG, "error")
+     @mock.patch.object(utils, "execute")
+@@ -141,49 +204,91 @@ class QuobyteTestCase(test.NoDBTestCase):
                                   "the Quobyte Volume at %s",
                                   export_mnt_base))
  
@@ -259,7 +269,7 @@ index a43a79a..7f867fa 100644
  
  
  class LibvirtQuobyteVolumeDriverTestCase(
-@@ -332,12 +434,12 @@ class LibvirtQuobyteVolumeDriverTestCase(
+@@ -332,12 +437,12 @@ class LibvirtQuobyteVolumeDriverTestCase(
  
          def exe_side_effect(*cmd, **kwargs):
              if cmd == mock.ANY:
@@ -274,11 +284,11 @@ index a43a79a..7f867fa 100644
                                libvirt_driver.connect_volume,
                                connection_info,
                                self.disk_info)
-diff --git nova/virt/libvirt/imagebackend.py nova/virt/libvirt/imagebackend.py
-index 8dd227e..eaf5c81 100644
---- nova/virt/libvirt/imagebackend.py
-+++ nova/virt/libvirt/imagebackend.py
-@@ -232,9 +232,11 @@ class Image(object):
+diff --git a/nova/virt/libvirt/imagebackend.py b/nova/virt/libvirt/imagebackend.py
+index 0f66888..8f42110 100644
+--- a/nova/virt/libvirt/imagebackend.py
++++ b/nova/virt/libvirt/imagebackend.py
+@@ -247,9 +247,11 @@ class Image(object):
              if os.path.exists(base) and size > self.get_disk_size(base):
                  self.resize_image(size)
  
@@ -293,10 +303,10 @@ index 8dd227e..eaf5c81 100644
  
      def _can_fallocate(self):
          """Check once per class, whether fallocate(1) is available,
-diff --git nova/virt/libvirt/volume/quobyte.py nova/virt/libvirt/volume/quobyte.py
-index 284a084..f36aacb 100644
---- nova/virt/libvirt/volume/quobyte.py
-+++ nova/virt/libvirt/volume/quobyte.py
+diff --git a/nova/virt/libvirt/volume/quobyte.py b/nova/virt/libvirt/volume/quobyte.py
+index 284a084..1d41f6f 100644
+--- a/nova/virt/libvirt/volume/quobyte.py
++++ b/nova/virt/libvirt/volume/quobyte.py
 @@ -19,6 +19,7 @@ import os
  from oslo_concurrency import processutils
  from oslo_log import log as logging
@@ -305,7 +315,7 @@ index 284a084..f36aacb 100644
  import six
  
  import nova.conf
-@@ -44,15 +45,22 @@ def mount_volume(volume, mnt_base, configfile=None):
+@@ -44,22 +45,29 @@ def mount_volume(volume, mnt_base, configfile=None):
      """Wraps execute calls for mounting a Quobyte volume"""
      fileutils.ensure_tree(mnt_base)
  
@@ -314,10 +324,10 @@ index 284a084..f36aacb 100644
 +    # additional metadata requests in the backend. xattrs can be
 +    # enabled without issues but will reduce performance.
 +    command = ['mount.quobyte', '--disable-xattrs', volume, mnt_base]
-+    if os.path.exists(" /run/systemd/system"):
++    if os.path.exists("/run/systemd/system"):
 +        # Note(kaisers): with systemd this requires a separate CGROUP to
 +        # prevent Nova service stop/restarts from killing the mount.
-+        command = ['systemd-run', '--scope', '--user', 'mount.quobyte',
++        command = ['systemd-run', '--scope', 'mount.quobyte',
 +                   '--disable-xattrs', volume, mnt_base]
      if configfile:
          command.extend(['-c', configfile])
@@ -327,10 +337,18 @@ index 284a084..f36aacb 100644
                mnt_base)
 -    # Run mount command but do not fail on already mounted exit code
 -    utils.execute(*command, check_exit_code=[0, 4])
-+    utils.execute(*command)
++    utils.execute(*command, run_as_root=True)
      LOG.info(_LI('Mounted volume: %s'), volume)
  
  
+ def umount_volume(mnt_base):
+     """Wraps execute calls for unmouting a Quobyte volume"""
+     try:
+-        utils.execute('umount.quobyte', mnt_base)
++        utils.execute('umount.quobyte', mnt_base, run_as_root=True)
+     except processutils.ProcessExecutionError as exc:
+         if 'Device or resource busy' in six.text_type(exc):
+             LOG.error(_LE("The Quobyte volume at %s is still in use."),
 @@ -69,21 +77,32 @@ def umount_volume(mnt_base):
                            mnt_base)
  
@@ -404,15 +422,3 @@ index 284a084..f36aacb 100644
      def disconnect_volume(self, connection_info, disk_dev):
          """Disconnect the volume."""
  
-diff --git releasenotes/notes/bug_1659328-73686be497f5f85a.yaml releasenotes/notes/bug_1659328-73686be497f5f85a.yaml
-new file mode 100644
-index 0000000..e55248e
---- /dev/null
-+++ releasenotes/notes/bug_1659328-73686be497f5f85a.yaml
-@@ -0,0 +1,6 @@
-+---
-+
-+fixes:
-+  - |
-+    The i/o performance for Quobyte volumes has been increased significantly
-+    by disabling xattrs.

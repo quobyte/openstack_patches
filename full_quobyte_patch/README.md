@@ -12,7 +12,7 @@ When complete these patches contain all relevant fixes and changes for the given
     - Removes the requirement to support extended attributes from Cinder mounts with patch [427833](https://review.openstack.org/#/c/427833/) for improved performance
 
 - Nova
-    - Fixes bug [1530860](https://bugs.launchpad.net/nova/+bug/1530860) with patch [432344](https://review.openstack.org/#/c/432344/) in order to prevent systemd service restarts from unmounting Nova mounts
+    - Fixes bug [1530860](https://bugs.launchpad.net/nova/+bug/1530860) with patch [432344](https://review.openstack.org/#/c/432344/) and bug [1756823](https://bugs.launchpad.net/nova/+bug/1756823) with patch [554195](https://review.openstack.org/#/c/554195/) in order to prevent systemd service restarts from unmounting Nova mounts
     - Fixes bug [1679976](https://bugs.launchpad.net/nova/+bug/1679976) with patch [453537](https://review.openstack.org/#/c/453537/) disallowing a specific and potentially bad exit code during volume mounts
     - Removes the requirement to support extended attributes from Nova mounts with patch [428646](https://review.openstack.org/#/c/428646/) for improved performance
 
@@ -44,3 +44,11 @@ For __example__, to patch a cinder installation based on a stripped package run:
 These patches can be applied by navigating to the respective project source root directory and running:
 
     patch -p0 < /path/to/patchfile
+
+### Changelog
+
+#### 0.2 (2018-04-13)
+    - Updated systemd based mount handling
+
+#### 0.1 
+    - Original release
