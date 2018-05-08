@@ -1,22 +1,3 @@
-diff --git a/nova/virt/libvirt/imagebackend.py b/nova/virt/libvirt/imagebackend.py
-index 0f66888..8f42110 100644
---- a/virt/libvirt/imagebackend.py
-+++ b/virt/libvirt/imagebackend.py
-@@ -247,9 +247,11 @@ class Image(object):
-             if os.path.exists(base) and size > self.get_disk_size(base):
-                 self.resize_image(size)
- 
--            if (self.preallocate and self._can_fallocate() and
--                    os.access(self.path, os.W_OK)):
--                utils.execute('fallocate', '-n', '-l', size, self.path)
-+            if (self.preallocate and os.access(self.path, os.W_OK)):
-+                LOG.debug('Truncating new image at %(path)s to virtual size '
-+                          '(patched for Quobyte).',
-+                          {'path': self.path})
-+                utils.execute('truncate', '-s', size, self.path)
- 
-     def _can_fallocate(self):
-         """Check once per class, whether fallocate(1) is available,
 diff --git a/nova/virt/libvirt/volume/quobyte.py b/nova/virt/libvirt/volume/quobyte.py
 index 284a084..1d41f6f 100644
 --- a/virt/libvirt/volume/quobyte.py

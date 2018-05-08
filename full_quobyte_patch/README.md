@@ -51,6 +51,9 @@ And for Nova:
 
 ### Changelog
 
+#### 0.3 (2018-05-08)
+    - Fixed a regression that reintroduced superfluous truncate operations in Nova
+
 #### 0.2 (2018-04-13)
     - Updated systemd based mount handling
 
