@@ -1,0 +1,356 @@
+diff --git a/manila/share/drivers/quobyte/jsonrpc.py b/manila/share/drivers/quobyte/jsonrpc.py
+index 26c9b20..0851cdb 100644
+--- a/manila/share/drivers/quobyte/jsonrpc.py
++++ b/manila/share/drivers/quobyte/jsonrpc.py
+@@ -34,6 +34,8 @@ from manila import utils
+ LOG = log.getLogger(__name__)
+ 
+ ERROR_ENOENT = 2
++ERROR_ENTITY_NOT_FOUND = -24
++ERROR_GARBAGE_ARGS = -3
+ 
+ 
+ class JsonRpc(object):
+@@ -58,7 +60,7 @@ class JsonRpc(object):
+         self._cert_file = cert_file
+ 
+     @utils.synchronized('quobyte-request')
+-    def call(self, method_name, user_parameters):
++    def call(self, method_name, user_parameters, expected_errors=[]):
+         # prepare request
+         self._id += 1
+         parameters = {'retry': 'INFINITELY'}  # Backend specific setting
+@@ -95,17 +97,19 @@ class JsonRpc(object):
+         if result.status_code == codes['OK']:
+             LOG.debug("Retrieved data from Quobyte backend: %s", result.text)
+             response = result.json()
+-            return self._checked_for_application_error(response)
++            return self._checked_for_application_error(response,
++                                                       expected_errors)
+ 
+         # If things did not work out provide error info
+         LOG.debug("Backend request resulted in error: %s" % result.text)
+         result.raise_for_status()
+ 
+-    def _checked_for_application_error(self, result):
++    def _checked_for_application_error(self, result, expected_errors=[]):
+         if 'error' in result and result['error']:
+             if 'message' in result['error'] and 'code' in result['error']:
+-                if result["error"]["code"] == ERROR_ENOENT:
+-                    return None  # No Entry
++                if result["error"]["code"] in expected_errors:
++                    # hit an expected error, return empty result
++                    return None
+                 else:
+                     raise exception.QBRpcException(
+                         result=result["error"]["message"],
+diff --git a/manila/share/drivers/quobyte/quobyte.py b/manila/share/drivers/quobyte/quobyte.py
+index 34a3158..1ca63de 100644
+--- a/manila/share/drivers/quobyte/quobyte.py
++++ b/manila/share/drivers/quobyte/quobyte.py
+@@ -76,9 +76,11 @@ class QuobyteShareDriver(driver.ExecuteMixin, driver.ShareDriver,):
+         1.2.1   - Improved capacity calculation
+         1.2.2   - Minor optimizations
+         1.2.3   - Updated RPC layer for improved stability
++        1.2.4   - Fixed handling updated QB API error codes
++        1.2.5   - Fixed two quota handling bugs
+     """
+ 
+-    DRIVER_VERSION = '1.2.3'
++    DRIVER_VERSION = '1.2.5'
+ 
+     def __init__(self, *args, **kwargs):
+         super(QuobyteShareDriver, self).__init__(False, *args, **kwargs)
+@@ -178,16 +180,22 @@ class QuobyteShareDriver(driver.ExecuteMixin, driver.ShareDriver,):
+         return project_id
+ 
+     def _resize_share(self, share, new_size):
+-        # TODO(kaisers): check and update existing quota if already present
+-        self.rpc.call('setQuota', {"consumer": {"type": 3,
+-                                                "identifier": share["name"]},
+-                                   "limits": {"type": 5, "value": new_size}})
++        newsize_bytes = new_size * units.Gi
++        self.rpc.call('setQuota', {"quotas": [
++            {"consumer":
++                [{"type": "VOLUME",
++                  "identifier": share["name"],
++                  "tenant_id": share["project_id"]}],
++             "limits": [{"type": "LOGICAL_DISK_SPACE",
++                        "value": newsize_bytes}]}
++        ]})
+ 
+     def _resolve_volume_name(self, volume_name, tenant_domain):
+         """Resolve a volume name to the global volume uuid."""
+         result = self.rpc.call('resolveVolumeName', dict(
+             volume_name=volume_name,
+-            tenant_domain=tenant_domain))
++            tenant_domain=tenant_domain), [jsonrpc.ERROR_ENOENT,
++                                           jsonrpc.ERROR_ENTITY_NOT_FOUND])
+         if result:
+             return result['volume_uuid']
+         return None  # not found
+@@ -220,6 +228,10 @@ class QuobyteShareDriver(driver.ExecuteMixin, driver.ShareDriver,):
+             self._get_project_name(context, share['project_id']))
+ 
+         if not volume_uuid:
++            # create tenant, expect ERROR_GARBAGE_ARGS if it already exists
++            self.rpc.call('setTenant',
++                          dict(tenant=dict(tenant_id=share['project_id'])),
++                          expected_errors=[jsonrpc.ERROR_GARBAGE_ARGS])
+             result = self.rpc.call('createVolume', dict(
+                 name=share['name'],
+                 tenant_domain=share['project_id'],
+@@ -233,6 +245,8 @@ class QuobyteShareDriver(driver.ExecuteMixin, driver.ShareDriver,):
+             volume_uuid=volume_uuid,
+             protocol='NFS'))
+ 
++        self._resize_share(share, share['size'])
++
+         return '%(nfs_server_ip)s:%(nfs_export_path)s' % result
+ 
+     def delete_share(self, context, share, share_server=None):
+@@ -317,7 +331,7 @@ class QuobyteShareDriver(driver.ExecuteMixin, driver.ShareDriver,):
+         self.rpc.call('exportVolume', call_params)
+ 
+     def extend_share(self, ext_share, ext_size, share_server=None):
+-        """Uses resize_share to extend a share.
++        """Uses _resize_share to extend a share.
+ 
+         :param ext_share: Share model.
+         :param ext_size: New size of share (new_size > share['size']).
+@@ -326,7 +340,7 @@ class QuobyteShareDriver(driver.ExecuteMixin, driver.ShareDriver,):
+         self._resize_share(share=ext_share, new_size=ext_size)
+ 
+     def shrink_share(self, shrink_share, shrink_size, share_server=None):
+-        """Uses resize_share to shrink a share.
++        """Uses _resize_share to shrink a share.
+ 
+         Quobyte uses soft quotas. If a shares current size is bigger than
+         the new shrunken size no data is lost. Data can be continuously read
+diff --git a/manila/tests/share/drivers/quobyte/test_jsonrpc.py b/manila/tests/share/drivers/quobyte/test_jsonrpc.py
+index bc5f06f..3e869e5 100644
+--- a/manila/tests/share/drivers/quobyte/test_jsonrpc.py
++++ b/manila/tests/share/drivers/quobyte/test_jsonrpc.py
+@@ -141,6 +141,29 @@ class QuobyteJsonRpcTestCase(test.TestCase):
+             verify=fake_ca_file)
+         self.assertEqual("Sweet gorilla of Manila", result)
+ 
++    @mock.patch.object(jsonrpc.JsonRpc, "_checked_for_application_error",
++                       return_value="Sweet gorilla of Manila")
++    @mock.patch.object(requests, "post",
++                       return_value=FakeResponse(
++                           200, {"result": "Sweet gorilla of Manila"}))
++    def test_https_call_verify_expected_error(self, mock_req_get, mock_check):
++        fake_ca_file = tempfile.TemporaryFile()
++        self.rpc = jsonrpc.JsonRpc(url="https://test",
++                                   user_credentials=("me", "team"),
++                                   ca_file=fake_ca_file)
++
++        result = self.rpc.call('method', {'param': 'value'},
++                               expected_errors=[42])
++
++        mock_req_get.assert_called_once_with(
++            url=self.rpc._url,
++            json=mock.ANY,  # not checking here as of undefined order in dict
++            auth=self.rpc._credentials,
++            verify=fake_ca_file)
++        mock_check.assert_called_once_with(
++            {'result': 'Sweet gorilla of Manila'}, [42])
++        self.assertEqual("Sweet gorilla of Manila", result)
++
+     @mock.patch.object(requests, "post", side_effect=exceptions.HTTPError)
+     def test_jsonrpc_call_http_exception(self, req_get_mock):
+         self.assertRaises(exceptions.HTTPError,
+@@ -169,12 +192,22 @@ class QuobyteJsonRpcTestCase(test.TestCase):
+                          (self.rpc._checked_for_application_error(
+                              result=resultdict)))
+ 
++    def test_checked_for_application_error_enf(self):
++        resultdict = {"result": "Sweet gorilla of Manila",
++                      "error": {"message": "No Gorilla",
++                                "code": jsonrpc.ERROR_ENTITY_NOT_FOUND}}
++        self.assertIsNone(
++            self.rpc._checked_for_application_error(
++                result=resultdict,
++                expected_errors=[jsonrpc.ERROR_ENTITY_NOT_FOUND]))
++
+     def test_checked_for_application_error_no_entry(self):
+         resultdict = {"result": "Sweet gorilla of Manila",
+                       "error": {"message": "No Gorilla",
+                                 "code": jsonrpc.ERROR_ENOENT}}
+         self.assertIsNone(
+-            self.rpc._checked_for_application_error(result=resultdict))
++            self.rpc._checked_for_application_error(
++                result=resultdict, expected_errors=[jsonrpc.ERROR_ENOENT]))
+ 
+     def test_checked_for_application_error_exception(self):
+         self.assertRaises(exception.QBRpcException,
+diff --git a/manila/tests/share/drivers/quobyte/test_quobyte.py b/manila/tests/share/drivers/quobyte/test_quobyte.py
+index c43cb2f..a43b3c0 100644
+--- a/manila/tests/share/drivers/quobyte/test_quobyte.py
++++ b/manila/tests/share/drivers/quobyte/test_quobyte.py
+@@ -15,6 +15,7 @@
+ 
+ import mock
+ from oslo_config import cfg
++from oslo_utils import units
+ import six
+ 
+ from manila import context
+@@ -29,7 +30,7 @@ from manila.tests import fake_share
+ CONF = cfg.CONF
+ 
+ 
+-def fake_rpc_handler(name, *args):
++def fake_rpc_handler(name, *args, **kwargs):
+     if name == 'resolveVolumeName':
+         return None
+     elif name == 'createVolume':
+@@ -114,7 +115,8 @@ class QuobyteShareDriverTestCase(test.TestCase):
+         self.assertRaises(exception.QBException,
+                           self._driver.do_setup, self._context)
+ 
+-    def test_create_share_new_volume(self):
++    @mock.patch.object(quobyte.QuobyteShareDriver, "_resize_share")
++    def test_create_share_new_volume(self, qb_resize_mock):
+         self._driver.rpc.call = mock.Mock(wraps=fake_rpc_handler)
+ 
+         result = self._driver.create_share(self._context, self.share)
+@@ -130,14 +132,32 @@ class QuobyteShareDriverTestCase(test.TestCase):
+             )),
+             mock.call('exportVolume',
+                       dict(protocol='NFS', volume_uuid='voluuid'))])
++        qb_resize_mock.assert_called_once_with(self.share, self.share['size'])
+ 
+-    def test_create_share_existing_volume(self):
++    @mock.patch.object(quobyte.QuobyteShareDriver, "_resize_share")
++    def test_create_share_existing_volume(self, qb_resize_mock):
+         self._driver.rpc.call = mock.Mock(wraps=fake_rpc_handler)
+ 
+         self._driver.create_share(self._context, self.share)
+ 
+-        self._driver.rpc.call.assert_called_with(
+-            'exportVolume', dict(protocol='NFS', volume_uuid='voluuid'))
++        resolv_params = {'tenant_domain': 'fake_project_uuid',
++                         'volume_name': 'fakename'}
++        sett_params = {'tenant': {'tenant_id': 'fake_project_uuid'}}
++        create_params = dict(
++            name='fakename',
++            tenant_domain='fake_project_uuid',
++            root_user_id='root',
++            root_group_id='root',
++            configuration_name='BASE')
++        self._driver.rpc.call.assert_has_calls([
++            mock.call('resolveVolumeName', resolv_params,
++                      [jsonrpc.ERROR_ENOENT, jsonrpc.ERROR_ENTITY_NOT_FOUND]),
++            mock.call('setTenant', sett_params,
++                      expected_errors=[jsonrpc.ERROR_GARBAGE_ARGS]),
++            mock.call('createVolume', create_params),
++            mock.call('exportVolume', dict(protocol='NFS',
++                                           volume_uuid='voluuid'))])
++        qb_resize_mock.assert_called_once_with(self.share, self.share['size'])
+ 
+     def test_create_share_wrong_protocol(self):
+         share = {'share_proto': 'WRONG_PROTOCOL'}
+@@ -162,7 +182,8 @@ class QuobyteShareDriverTestCase(test.TestCase):
+         resolv_params = {'volume_name': 'fakename',
+                          'tenant_domain': 'fake_project_uuid'}
+         self._driver.rpc.call.assert_has_calls([
+-            mock.call('resolveVolumeName', resolv_params),
++            mock.call('resolveVolumeName', resolv_params,
++                      [jsonrpc.ERROR_ENOENT, jsonrpc.ERROR_ENTITY_NOT_FOUND]),
+             mock.call('deleteVolume', {'volume_uuid': 'voluuid'})])
+ 
+     def test_delete_share_existing_volume_disabled(self):
+@@ -178,8 +199,7 @@ class QuobyteShareDriverTestCase(test.TestCase):
+         self._driver.delete_share(self._context, self.share)
+ 
+         self._driver.rpc.call.assert_called_with(
+-            'exportVolume', {'volume_uuid': 'voluuid',
+-                             'remove_export': True})
++            'exportVolume', {'volume_uuid': 'voluuid', 'remove_export': True})
+ 
+     @mock.patch.object(quobyte.LOG, 'warning')
+     def test_delete_share_nonexisting_volume(self, mock_warning):
+@@ -276,8 +297,9 @@ class QuobyteShareDriverTestCase(test.TestCase):
+ 
+         exp_params = {'volume_name': 'fake_vol_name',
+                       'tenant_domain': 'fake_domain_name'}
+-        self._driver.rpc.call.assert_called_with('resolveVolumeName',
+-                                                 exp_params)
++        self._driver.rpc.call.assert_called_with(
++            'resolveVolumeName', exp_params,
++            [jsonrpc.ERROR_ENOENT, jsonrpc.ERROR_ENTITY_NOT_FOUND])
+ 
+     def test_resolve_volume_name_NOENT(self):
+         self._driver.rpc.call = mock.Mock(
+@@ -286,6 +308,12 @@ class QuobyteShareDriverTestCase(test.TestCase):
+         self.assertIsNone(
+             self._driver._resolve_volume_name('fake_vol_name',
+                                               'fake_domain_name'))
++        self._driver.rpc.call.assert_called_once_with(
++            'resolveVolumeName',
++            dict(volume_name='fake_vol_name',
++                 tenant_domain='fake_domain_name'),
++            [jsonrpc.ERROR_ENOENT, jsonrpc.ERROR_ENTITY_NOT_FOUND]
++        )
+ 
+     def test_resolve_volume_name_other_error(self):
+         self._driver.rpc.call = mock.Mock(
+@@ -390,19 +418,23 @@ class QuobyteShareDriverTestCase(test.TestCase):
+ 
+     def test_resize_share(self):
+         self._driver.rpc.call = mock.Mock(wraps=fake_rpc_handler)
++        manila_size = 7
++        newsize_bytes = manila_size * units.Gi
+ 
+-        self._driver._resize_share(share=self.share, new_size=7)
++        self._driver._resize_share(share=self.share, new_size=manila_size)
+ 
+         exp_params = {
+-            "consumer": {
+-                "type": 3,
+-                "identifier": self.share["name"],
+-            },
+-            "limits": {
+-                "type": 5,
+-                "value": 7,
+-            },
+-        }
++            "quotas": [{
++                "consumer": [{
++                    "type": "VOLUME",
++                    "identifier": self.share["name"],
++                    "tenant_id": self.share["project_id"]
++                }],
++                "limits": [{
++                    "type": "LOGICAL_DISK_SPACE",
++                    "value": newsize_bytes,
++                }],
++            }]}
+         self._driver.rpc.call.assert_has_calls([
+             mock.call('setQuota', exp_params)])
+ 
+diff --git a/releasenotes/notes/bugfix-1771958-1771970-bcec841e7ae6b9f6.yaml b/releasenotes/notes/bugfix-1771958-1771970-bcec841e7ae6b9f6.yaml
+new file mode 100644
+index 0000000..4b28280
+--- /dev/null
++++ b/releasenotes/notes/bugfix-1771958-1771970-bcec841e7ae6b9f6.yaml
+@@ -0,0 +1,6 @@
++---
++fixes:
++  - |
++    New shares created on a Quobyte backend are now initialized with the correct quota.
++  - |
++    fixes a bug causing incorrect quotas being set in the backend when resizing Quobyte shares.
+diff --git a/releasenotes/notes/qb-bug-1733807-581e71e6581de28e.yaml b/releasenotes/notes/qb-bug-1733807-581e71e6581de28e.yaml
+new file mode 100644
+index 0000000..c3363c6
+--- /dev/null
++++ b/releasenotes/notes/qb-bug-1733807-581e71e6581de28e.yaml
+@@ -0,0 +1,5 @@
++---
++fixes:
++  - |
++    The Quobyte driver now handles updated error codes from Quobyte API
++    versions 1.4+ .
