@@ -1,5 +1,5 @@
 diff --git a/manila/share/drivers/quobyte/jsonrpc.py b/manila/share/drivers/quobyte/jsonrpc.py
-index 26c9b20..0851cdb 100644
+index 26c9b20..9ed2c90 100644
 --- a/manila/share/drivers/quobyte/jsonrpc.py
 +++ b/manila/share/drivers/quobyte/jsonrpc.py
 @@ -34,6 +34,8 @@ from manila import utils
@@ -11,16 +11,18 @@ index 26c9b20..0851cdb 100644
  
  
  class JsonRpc(object):
-@@ -58,7 +60,7 @@ class JsonRpc(object):
+@@ -58,7 +60,9 @@ class JsonRpc(object):
          self._cert_file = cert_file
  
      @utils.synchronized('quobyte-request')
 -    def call(self, method_name, user_parameters):
-+    def call(self, method_name, user_parameters, expected_errors=[]):
++    def call(self, method_name, user_parameters, expected_errors=None):
++        if expected_errors is None:
++            expected_errors = []
          # prepare request
          self._id += 1
          parameters = {'retry': 'INFINITELY'}  # Backend specific setting
-@@ -95,17 +97,19 @@ class JsonRpc(object):
+@@ -95,17 +99,21 @@ class JsonRpc(object):
          if result.status_code == codes['OK']:
              LOG.debug("Retrieved data from Quobyte backend: %s", result.text)
              response = result.json()
@@ -33,7 +35,9 @@ index 26c9b20..0851cdb 100644
          result.raise_for_status()
  
 -    def _checked_for_application_error(self, result):
-+    def _checked_for_application_error(self, result, expected_errors=[]):
++    def _checked_for_application_error(self, result, expected_errors=None):
++        if expected_errors is None:
++            expected_errors = []
          if 'error' in result and result['error']:
              if 'message' in result['error'] and 'code' in result['error']:
 -                if result["error"]["code"] == ERROR_ENOENT:
@@ -45,23 +49,36 @@ index 26c9b20..0851cdb 100644
                      raise exception.QBRpcException(
                          result=result["error"]["message"],
 diff --git a/manila/share/drivers/quobyte/quobyte.py b/manila/share/drivers/quobyte/quobyte.py
-index 34a3158..1ca63de 100644
+index 34a3158..89701ad 100644
 --- a/manila/share/drivers/quobyte/quobyte.py
 +++ b/manila/share/drivers/quobyte/quobyte.py
-@@ -76,9 +76,11 @@ class QuobyteShareDriver(driver.ExecuteMixin, driver.ShareDriver,):
+@@ -76,9 +76,12 @@ class QuobyteShareDriver(driver.ExecuteMixin, driver.ShareDriver,):
          1.2.1   - Improved capacity calculation
          1.2.2   - Minor optimizations
          1.2.3   - Updated RPC layer for improved stability
 +        1.2.4   - Fixed handling updated QB API error codes
 +        1.2.5   - Fixed two quota handling bugs
++        1.2.6   - Fixed volume resize and jsonrpc code style bugs
      """
  
 -    DRIVER_VERSION = '1.2.3'
-+    DRIVER_VERSION = '1.2.5'
++    DRIVER_VERSION = '1.2.6'
  
      def __init__(self, *args, **kwargs):
          super(QuobyteShareDriver, self).__init__(False, *args, **kwargs)
-@@ -178,16 +180,22 @@ class QuobyteShareDriver(driver.ExecuteMixin, driver.ShareDriver,):
+@@ -87,9 +90,8 @@ class QuobyteShareDriver(driver.ExecuteMixin, driver.ShareDriver,):
+                              or CONF.share_backend_name or 'Quobyte')
+ 
+     def _fetch_existing_access(self, context, share):
+-        volume_uuid = self._resolve_volume_name(
+-            share['name'],
+-            self._get_project_name(context, share['project_id']))
++        volume_uuid = self._resolve_volume_name(share['name'],
++                                                share['project_id'])
+         result = self.rpc.call('getConfiguration', {})
+         if result is None:
+             raise exception.QBException(
+@@ -178,16 +180,23 @@ class QuobyteShareDriver(driver.ExecuteMixin, driver.ShareDriver,):
          return project_id
  
      def _resize_share(self, share, new_size):
@@ -73,7 +90,8 @@ index 34a3158..1ca63de 100644
 +        self.rpc.call('setQuota', {"quotas": [
 +            {"consumer":
 +                [{"type": "VOLUME",
-+                  "identifier": share["name"],
++                  "identifier": self._resolve_volume_name(share["name"],
++                                                          share['project_id']),
 +                  "tenant_id": share["project_id"]}],
 +             "limits": [{"type": "LOGICAL_DISK_SPACE",
 +                        "value": newsize_bytes}]}
@@ -89,8 +107,15 @@ index 34a3158..1ca63de 100644
          if result:
              return result['volume_uuid']
          return None  # not found
-@@ -220,6 +228,10 @@ class QuobyteShareDriver(driver.ExecuteMixin, driver.ShareDriver,):
-             self._get_project_name(context, share['project_id']))
+@@ -215,11 +224,14 @@ class QuobyteShareDriver(driver.ExecuteMixin, driver.ShareDriver,):
+             raise exception.QBException(
+                 _('Quobyte driver only supports NFS shares'))
+ 
+-        volume_uuid = self._resolve_volume_name(
+-            share['name'],
+-            self._get_project_name(context, share['project_id']))
++        volume_uuid = self._resolve_volume_name(share['name'],
++                                                share['project_id'])
  
          if not volume_uuid:
 +            # create tenant, expect ERROR_GARBAGE_ARGS if it already exists
@@ -100,7 +125,7 @@ index 34a3158..1ca63de 100644
              result = self.rpc.call('createVolume', dict(
                  name=share['name'],
                  tenant_domain=share['project_id'],
-@@ -233,6 +245,8 @@ class QuobyteShareDriver(driver.ExecuteMixin, driver.ShareDriver,):
+@@ -233,13 +245,14 @@ class QuobyteShareDriver(driver.ExecuteMixin, driver.ShareDriver,):
              volume_uuid=volume_uuid,
              protocol='NFS'))
  
@@ -109,7 +134,51 @@ index 34a3158..1ca63de 100644
          return '%(nfs_server_ip)s:%(nfs_export_path)s' % result
  
      def delete_share(self, context, share, share_server=None):
-@@ -317,7 +331,7 @@ class QuobyteShareDriver(driver.ExecuteMixin, driver.ShareDriver,):
+         """Delete the corresponding Quobyte volume."""
+-        volume_uuid = self._resolve_volume_name(
+-            share['name'],
+-            self._get_project_name(context, share['project_id']))
++        volume_uuid = self._resolve_volume_name(share['name'],
++                                                share['project_id'])
+         if not volume_uuid:
+             LOG.warning(_LW("No volume found for "
+                             "share %(project_id)s/%(name)s")
+@@ -267,9 +280,8 @@ class QuobyteShareDriver(driver.ExecuteMixin, driver.ShareDriver,):
+             the backend
+         """
+ 
+-        volume_uuid = self._resolve_volume_name(
+-            share['name'],
+-            self._get_project_name(context, share['project_id']))
++        volume_uuid = self._resolve_volume_name(share['name'],
++                                                share['project_id'])
+ 
+         LOG.debug("Ensuring Quobyte share %s" % share['name'])
+ 
+@@ -289,9 +301,8 @@ class QuobyteShareDriver(driver.ExecuteMixin, driver.ShareDriver,):
+             raise exception.InvalidShareAccess(
+                 _('Quobyte driver only supports ip access control'))
+ 
+-        volume_uuid = self._resolve_volume_name(
+-            share['name'],
+-            self._get_project_name(context, share['project_id']))
++        volume_uuid = self._resolve_volume_name(share['name'],
++                                                share['project_id'])
+         ro = access['access_level'] == (constants.ACCESS_LEVEL_RO)
+         call_params = {
+             "volume_uuid": volume_uuid,
+@@ -308,16 +319,15 @@ class QuobyteShareDriver(driver.ExecuteMixin, driver.ShareDriver,):
+                       self._get_project_name(context, share['project_id']))
+             return
+ 
+-        volume_uuid = self._resolve_volume_name(
+-            share['name'],
+-            self._get_project_name(context, share['project_id']))
++        volume_uuid = self._resolve_volume_name(share['name'],
++                                                share['project_id'])
+         call_params = {
+             "volume_uuid": volume_uuid,
+             "remove_allow_ip": access['access_to']}
          self.rpc.call('exportVolume', call_params)
  
      def extend_share(self, ext_share, ext_size, share_server=None):
@@ -118,7 +187,7 @@ index 34a3158..1ca63de 100644
  
          :param ext_share: Share model.
          :param ext_size: New size of share (new_size > share['size']).
-@@ -326,7 +340,7 @@ class QuobyteShareDriver(driver.ExecuteMixin, driver.ShareDriver,):
+@@ -326,7 +336,7 @@ class QuobyteShareDriver(driver.ExecuteMixin, driver.ShareDriver,):
          self._resize_share(share=ext_share, new_size=ext_size)
  
      def shrink_share(self, shrink_share, shrink_size, share_server=None):
@@ -186,7 +255,7 @@ index bc5f06f..3e869e5 100644
      def test_checked_for_application_error_exception(self):
          self.assertRaises(exception.QBRpcException,
 diff --git a/manila/tests/share/drivers/quobyte/test_quobyte.py b/manila/tests/share/drivers/quobyte/test_quobyte.py
-index c43cb2f..a43b3c0 100644
+index c43cb2f..52cb141 100644
 --- a/manila/tests/share/drivers/quobyte/test_quobyte.py
 +++ b/manila/tests/share/drivers/quobyte/test_quobyte.py
 @@ -15,6 +15,7 @@
@@ -272,7 +341,7 @@ index c43cb2f..a43b3c0 100644
  
      @mock.patch.object(quobyte.LOG, 'warning')
      def test_delete_share_nonexisting_volume(self, mock_warning):
-@@ -276,8 +297,9 @@ class QuobyteShareDriverTestCase(test.TestCase):
+@@ -276,8 +296,9 @@ class QuobyteShareDriverTestCase(test.TestCase):
  
          exp_params = {'volume_name': 'fake_vol_name',
                        'tenant_domain': 'fake_domain_name'}
@@ -284,7 +353,7 @@ index c43cb2f..a43b3c0 100644
  
      def test_resolve_volume_name_NOENT(self):
          self._driver.rpc.call = mock.Mock(
-@@ -286,6 +308,12 @@ class QuobyteShareDriverTestCase(test.TestCase):
+@@ -286,6 +307,12 @@ class QuobyteShareDriverTestCase(test.TestCase):
          self.assertIsNone(
              self._driver._resolve_volume_name('fake_vol_name',
                                                'fake_domain_name'))
@@ -297,9 +366,14 @@ index c43cb2f..a43b3c0 100644
  
      def test_resolve_volume_name_other_error(self):
          self._driver.rpc.call = mock.Mock(
-@@ -390,19 +418,23 @@ class QuobyteShareDriverTestCase(test.TestCase):
+@@ -388,23 +415,31 @@ class QuobyteShareDriverTestCase(test.TestCase):
+         mock_qsd_resize_share.assert_called_once_with(share=self.share,
+                                                       new_size=2)
  
-     def test_resize_share(self):
+-    def test_resize_share(self):
++    @mock.patch.object(quobyte.QuobyteShareDriver, "_resolve_volume_name",
++                       return_value="fake_volume_uuid")
++    def test_resize_share(self, mock_qb_resolv):
          self._driver.rpc.call = mock.Mock(wraps=fake_rpc_handler)
 +        manila_size = 7
 +        newsize_bytes = manila_size * units.Gi
@@ -320,7 +394,7 @@ index c43cb2f..a43b3c0 100644
 +            "quotas": [{
 +                "consumer": [{
 +                    "type": "VOLUME",
-+                    "identifier": self.share["name"],
++                    "identifier": "fake_volume_uuid",
 +                    "tenant_id": self.share["project_id"]
 +                }],
 +                "limits": [{
@@ -330,27 +404,19 @@ index c43cb2f..a43b3c0 100644
 +            }]}
          self._driver.rpc.call.assert_has_calls([
              mock.call('setQuota', exp_params)])
++        mock_qb_resolv.assert_called_once_with(self.share['name'],
++                                               self.share['project_id'])
  
-diff --git a/releasenotes/notes/bugfix-1771958-1771970-bcec841e7ae6b9f6.yaml b/releasenotes/notes/bugfix-1771958-1771970-bcec841e7ae6b9f6.yaml
+     @mock.patch.object(quobyte.QuobyteShareDriver,
+                        "_resolve_volume_name",
+diff --git a/releasenotes/notes/bug-1774604-qb-driver-b7e717cbc71d6189.yaml b/releasenotes/notes/bug-1774604-qb-driver-b7e717cbc71d6189.yaml
 new file mode 100644
-index 0000000..4b28280
+index 0000000..f3de72a
 --- /dev/null
-+++ b/releasenotes/notes/bugfix-1771958-1771970-bcec841e7ae6b9f6.yaml
-@@ -0,0 +1,6 @@
-+---
-+fixes:
-+  - |
-+    New shares created on a Quobyte backend are now initialized with the correct quota.
-+  - |
-+    fixes a bug causing incorrect quotas being set in the backend when resizing Quobyte shares.
-diff --git a/releasenotes/notes/qb-bug-1733807-581e71e6581de28e.yaml b/releasenotes/notes/qb-bug-1733807-581e71e6581de28e.yaml
-new file mode 100644
-index 0000000..c3363c6
---- /dev/null
-+++ b/releasenotes/notes/qb-bug-1733807-581e71e6581de28e.yaml
++++ b/releasenotes/notes/bug-1774604-qb-driver-b7e717cbc71d6189.yaml
 @@ -0,0 +1,5 @@
 +---
 +fixes:
 +  - |
-+    The Quobyte driver now handles updated error codes from Quobyte API
-+    versions 1.4+ .
++    Fixed a bug in the Quobyte driver that allowed share resizing to
++    incorrectly address the share to be resized in the backend.

@@ -16,6 +16,8 @@ These patches are continuosly evolving and contain all relevant fixes and change
         - Fixes bug [1733807](https://bugs.launchpad.net/manila/+bug/1733807) with patch [570741](https://review.openstack.org/#/c/570741) for improved API compatibility.
         - Fixes bug [1771958](https://bugs.launchpad.net/manila/+bug/1771958) with patch [569355](https://review.openstack.org/#/c/569355/) to fix initial quota creation.
         - Fixes bug [1771970](https://bugs.launchpad.net/manila/+bug/1771970) with patch [569355](https://review.openstack.org/#/c/569355/) to correct the quota when resizing a Manila share.
+        - Fixes bug [1774604](https://bugs.launchpad.net/manila/+bug/1774604) with patch [571693](https://review.openstack.org/#/c/571693/) to avoid incoherent volume specification in resizing.
+        - Fixes bug [1773929](https://bugs.launchpad.net/manila/+bug/1773929) with patch [572291](https://review.openstack.org/#/c/572291/) to fix a coding style issue.
 
     - Nova
         - Fixes bug [1530860](https://bugs.launchpad.net/nova/+bug/1530860) with patch [432344](https://review.openstack.org/#/c/432344/) and bug [1756823](https://bugs.launchpad.net/nova/+bug/1756823) with patch [554195](https://review.openstack.org/#/c/554195/) in order to prevent systemd service restarts from unmounting Nova mounts
@@ -56,6 +58,9 @@ And for Nova and Manila:
     patch -p1 < /path/to/patchfile
 
 ### Changelog
+
+#### 0.5 (208-06-29)
+    - Updates Manila patches for fixing a share resizing and a code style issue
 
 #### 0.4 (2018-05-28)
     - Adds Manila patches
