@@ -1,0 +1,34 @@
+diff --git a/nova/virt/libvirt/volume/quobyte.py b/nova/virt/libvirt/volume/quobyte.py
+index 462beab3e5..c9b6932a47 100644
+--- a/nova/virt/libvirt/volume/quobyte.py
++++ b/nova/virt/libvirt/volume/quobyte.py
+@@ -47,10 +47,10 @@ def mount_volume(volume, mnt_base, configfile=None):
+     # additional metadata requests in the backend. xattrs can be
+     # enabled without issues but will reduce performance.
+     command = ['mount.quobyte', '--disable-xattrs', volume, mnt_base]
+-    if os.path.exists(" /run/systemd/system"):
++    if os.path.exists("/run/systemd/system"):
+         # Note(kaisers): with systemd this requires a separate CGROUP to
+         # prevent Nova service stop/restarts from killing the mount.
+-        command = ['systemd-run', '--scope', '--user', 'mount.quobyte',
++        command = ['systemd-run', '--scope', 'mount.quobyte',
+                    '--disable-xattrs', volume, mnt_base]
+     if configfile:
+         command.extend(['-c', configfile])
+@@ -58,14 +58,14 @@ def mount_volume(volume, mnt_base, configfile=None):
+     LOG.debug('Mounting volume %s at mount point %s ...',
+               volume,
+               mnt_base)
+-    utils.execute(*command)
++    utils.execute(*command, run_as_root=True)
+     LOG.info('Mounted volume: %s', volume)
+ 
+ 
+ def umount_volume(mnt_base):
+     """Wraps execute calls for unmouting a Quobyte volume"""
+     try:
+-        utils.execute('umount.quobyte', mnt_base)
++        utils.execute('umount.quobyte', mnt_base, run_as_root=True)
+     except processutils.ProcessExecutionError as exc:
+         if 'Device or resource busy' in six.text_type(exc):
+             LOG.error("The Quobyte volume at %s is still in use.", mnt_base)

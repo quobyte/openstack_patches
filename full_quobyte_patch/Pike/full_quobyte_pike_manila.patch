@@ -1,0 +1,124 @@
+diff --git a/manila/share/drivers/quobyte/jsonrpc.py b/manila/share/drivers/quobyte/jsonrpc.py
+index ba4b60ec..df752802 100644
+--- a/manila/share/drivers/quobyte/jsonrpc.py
++++ b/manila/share/drivers/quobyte/jsonrpc.py
+@@ -59,7 +59,9 @@ class JsonRpc(object):
+         self._cert_file = cert_file
+ 
+     @utils.synchronized('quobyte-request')
+-    def call(self, method_name, user_parameters, expected_errors=[]):
++    def call(self, method_name, user_parameters, expected_errors=None):
++        if expected_errors is None:
++            expected_errors = []
+         # prepare request
+         self._id += 1
+         parameters = {'retry': 'INFINITELY'}  # Backend specific setting
+@@ -103,7 +105,9 @@ class JsonRpc(object):
+         LOG.debug("Backend request resulted in error: %s", result.text)
+         result.raise_for_status()
+ 
+-    def _checked_for_application_error(self, result, expected_errors=[]):
++    def _checked_for_application_error(self, result, expected_errors=None):
++        if expected_errors is None:
++            expected_errors = []
+         if 'error' in result and result['error']:
+             if 'message' in result['error'] and 'code' in result['error']:
+                 if result["error"]["code"] in expected_errors:
+diff --git a/manila/share/drivers/quobyte/quobyte.py b/manila/share/drivers/quobyte/quobyte.py
+index 55d7eeb9..1b21ac24 100644
+--- a/manila/share/drivers/quobyte/quobyte.py
++++ b/manila/share/drivers/quobyte/quobyte.py
+@@ -78,9 +78,10 @@ class QuobyteShareDriver(driver.ExecuteMixin, driver.ShareDriver,):
+         1.2.3   - Updated RPC layer for improved stability
+         1.2.4   - Fixed handling updated QB API error codes
+         1.2.5   - Fixed two quota handling bugs
++        1.2.6   - Fixed volume resize and jsonrpc code style bugs
+     """
+ 
+-    DRIVER_VERSION = '1.2.5'
++    DRIVER_VERSION = '1.2.6'
+ 
+     def __init__(self, *args, **kwargs):
+         super(QuobyteShareDriver, self).__init__(False, *args, **kwargs)
+@@ -89,9 +90,8 @@ class QuobyteShareDriver(driver.ExecuteMixin, driver.ShareDriver,):
+                              or CONF.share_backend_name or 'Quobyte')
+ 
+     def _fetch_existing_access(self, context, share):
+-        volume_uuid = self._resolve_volume_name(
+-            share['name'],
+-            self._get_project_name(context, share['project_id']))
++        volume_uuid = self._resolve_volume_name(share['name'],
++                                                share['project_id'])
+         result = self.rpc.call('getConfiguration', {})
+         if result is None:
+             raise exception.QBException(
+@@ -184,7 +184,8 @@ class QuobyteShareDriver(driver.ExecuteMixin, driver.ShareDriver,):
+         self.rpc.call('setQuota', {"quotas": [
+             {"consumer":
+                 [{"type": "VOLUME",
+-                  "identifier": share["name"],
++                  "identifier": self._resolve_volume_name(share["name"],
++                                                          share['project_id']),
+                   "tenant_id": share["project_id"]}],
+              "limits": [{"type": "LOGICAL_DISK_SPACE",
+                         "value": newsize_bytes}]}
+@@ -223,9 +224,8 @@ class QuobyteShareDriver(driver.ExecuteMixin, driver.ShareDriver,):
+             raise exception.QBException(
+                 _('Quobyte driver only supports NFS shares'))
+ 
+-        volume_uuid = self._resolve_volume_name(
+-            share['name'],
+-            self._get_project_name(context, share['project_id']))
++        volume_uuid = self._resolve_volume_name(share['name'],
++                                                share['project_id'])
+ 
+         if not volume_uuid:
+             # create tenant, expect ERROR_GARBAGE_ARGS if it already exists
+@@ -251,9 +251,8 @@ class QuobyteShareDriver(driver.ExecuteMixin, driver.ShareDriver,):
+ 
+     def delete_share(self, context, share, share_server=None):
+         """Delete the corresponding Quobyte volume."""
+-        volume_uuid = self._resolve_volume_name(
+-            share['name'],
+-            self._get_project_name(context, share['project_id']))
++        volume_uuid = self._resolve_volume_name(share['name'],
++                                                share['project_id'])
+         if not volume_uuid:
+             LOG.warning("No volume found for "
+                         "share %(project_id)s/%(name)s",
+@@ -281,9 +280,8 @@ class QuobyteShareDriver(driver.ExecuteMixin, driver.ShareDriver,):
+             the backend
+         """
+ 
+-        volume_uuid = self._resolve_volume_name(
+-            share['name'],
+-            self._get_project_name(context, share['project_id']))
++        volume_uuid = self._resolve_volume_name(share['name'],
++                                                share['project_id'])
+ 
+         LOG.debug("Ensuring Quobyte share %s", share['name'])
+ 
+@@ -303,9 +301,8 @@ class QuobyteShareDriver(driver.ExecuteMixin, driver.ShareDriver,):
+             raise exception.InvalidShareAccess(
+                 _('Quobyte driver only supports ip access control'))
+ 
+-        volume_uuid = self._resolve_volume_name(
+-            share['name'],
+-            self._get_project_name(context, share['project_id']))
++        volume_uuid = self._resolve_volume_name(share['name'],
++                                                share['project_id'])
+         ro = access['access_level'] == (constants.ACCESS_LEVEL_RO)
+         call_params = {
+             "volume_uuid": volume_uuid,
+@@ -322,9 +319,8 @@ class QuobyteShareDriver(driver.ExecuteMixin, driver.ShareDriver,):
+                       self._get_project_name(context, share['project_id']))
+             return
+ 
+-        volume_uuid = self._resolve_volume_name(
+-            share['name'],
+-            self._get_project_name(context, share['project_id']))
++        volume_uuid = self._resolve_volume_name(share['name'],
++                                                share['project_id'])
+         call_params = {
+             "volume_uuid": volume_uuid,
+             "remove_allow_ip": access['access_to']}
