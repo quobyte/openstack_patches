@@ -36,6 +36,9 @@ This patch is part of the upstream code fore releases Pike and newer.
 
 Backport of the upstream changes for [overlay volumes](https://review.openstack.org/#/c/507050), the [volume_from_snapshot_cache](https://review.openstack.org/#/c/502974/9) and some [general volume creation optimizations](https://review.openstack.org/#/c/500782/) for Cinder.
 
+## qemu-img_commit_patch
+A simple Cinder patch for setups encountering qemu-img commit crashes during snapshot deletion with v3 Kernels.
+
 ## xattr-removal_patch
 
 Backports of performance optimizations that remove the usage of xattr from the Nova driver and mount Quobyte volumes without xattr support, in order to improve iops.

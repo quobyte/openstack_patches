@@ -1,0 +1,13 @@
+diff --git a/cinder/volume/drivers/remotefs.py b/cinder/volume/drivers/remotefs.py
+index 6f07cb90c..54f15f2ca 100644
+--- a/cinder/volume/drivers/remotefs.py
++++ b/cinder/volume/drivers/remotefs.py
+@@ -744,7 +744,7 @@ class RemoteFSSnapDriverBase(RemoteFSDriver):
+         # NFS snapshots
+         #  It needs to run as root for volumes attached to instances, but
+         #  does not when in secure mode.
+-        self._execute('qemu-img', 'commit', path,
++        self._execute('qemu-img', 'commit', '-d', path,
+                       run_as_root=self._execute_as_root)
+         self._delete(path)
+ 
