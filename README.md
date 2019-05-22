@@ -23,6 +23,13 @@ Please see the different patches readme files for their respective installation 
 
 These patches provides an all in one patch file per project for easier installation. These patch files correct a list of issues/features, including single issue fix patches availabe in this repository.
 
+## overlay_volume_patch (**beta**)
+
+Backport of the upstream changes for [overlay volumes](https://review.openstack.org/#/c/507050), the [volume_from_snapshot_cache](https://review.openstack.org/#/c/502974/9) and some [general volume creation optimizations](https://review.openstack.org/#/c/500782/) for Cinder.
+
+## qemu-img_commit_patch
+A simple Cinder patch for setups encountering qemu-img commit crashes during snapshot deletion with v3 Kernels.
+
 ## return_for_create_clone_patch
 
 Small patch that enables volume backups via volume cloning with Quobyte volumes. This change is part of the upstream code for releases Pike and newer.
@@ -32,12 +39,9 @@ Small patch that enables volume backups via volume cloning with Quobyte volumes.
 Backport of a [Nova bugfix](https://review.openstack.org/#/c/432344/) for a [bug](https://bugs.launchpad.net/nova/+bug/1530860) that caused mounts to be removed when the Nova service was stopped or restarted.
 This patch is part of the upstream code fore releases Pike and newer.
 
-## overlay_volume_patch (**beta**)
+## user_current_vol-url patch
 
-Backport of the upstream changes for [overlay volumes](https://review.openstack.org/#/c/507050), the [volume_from_snapshot_cache](https://review.openstack.org/#/c/502974/9) and some [general volume creation optimizations](https://review.openstack.org/#/c/500782/) for Cinder.
-
-## qemu-img_commit_patch
-A simple Cinder patch for setups encountering qemu-img commit crashes during snapshot deletion with v3 Kernels.
+Patches the Cinder Quobyte driver to always use the currently configured quobyte_volume_url.
 
 ## xattr-removal_patch
 
