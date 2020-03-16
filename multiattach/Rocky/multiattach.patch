@@ -1,0 +1,35 @@
+diff --git a/cinder/volume/drivers/quobyte.py b/cinder/volume/drivers/quobyte.py
+index 7067b9704..8fb6e1dbf 100644
+--- a/cinder/volume/drivers/quobyte.py
++++ b/cinder/volume/drivers/quobyte.py
+@@ -61,7 +61,14 @@ volume_opts = [
+                 default=False,
+                 help=('Create a cache of volumes from merged snapshots to '
+                       'speed up creation of multiple volumes from a single '
+-                      'snapshot.'))
++                      'snapshot.')),
++    cfg.BoolOpt('quobyte_multiattach',
++                default=False,
++                help=('Allows using Cinders multi attach feature with Quobyte.'
++                      ' Note that usage of multiattach with Quobyte requires'
++                      ' using an additional distributed locking service.'
++                      ' Ensure Quobyte volumes used with this option do not'
++                      ' use client caching in their volume configuration.'))
+ ]
+
+ CONF = cfg.CONF
+@@ -591,6 +598,14 @@ class QuobyteDriver(remotefs_drv.RemoteFSSnapDriverDistributed):
+             if self.configuration.quobyte_volume_from_snapshot_cache:
+                 self._ensure_volume_from_snap_cache(mount_path)
+
++    def _update_volume_stats(self):
++        super(QuobyteDriver, self)._update_volume_stats()
++        if self.configuration.quobyte_multiattach:
++            self._stats["multiattach"] = True
++            LOG.info('multiattach for Quobyte is active.')
++        else:
++            self._stats["multiattach"] = False
++
+     def _validate_volume(self, mount_path):
+         """Runs a number of tests on the expect Quobyte mount"""
+         partitions = psutil.disk_partitions(all=True)

@@ -1,0 +1,58 @@
+diff --git a/cinder/tests/unit/volume/drivers/test_quobyte.py b/cinder/tests/unit/volume/drivers/test_quobyte.py
+index 1fb177e5d..b1b81eaef 100644
+--- a/cinder/tests/unit/volume/drivers/test_quobyte.py
++++ b/cinder/tests/unit/volume/drivers/test_quobyte.py
+@@ -1447,6 +1447,18 @@ class QuobyteDriverTestCase(test.TestCase):
+                          drv.configuration.nas_secure_file_permissions)
+         self.assertFalse(drv._execute_as_root)
+
++    @ddt.data(True, False)
++    @mock.patch.object(remotefs.RemoteFSDriver, '_update_volume_stats')
++    def test__update_volume_stats(self, dat, mock_rfs_uvs):
++        drv = self._driver
++        drv.stats = {}
++        drv.configuration.quobyte_multiattach = dat
++
++        drv._update_volume_stats()
++
++        mock_rfs_uvs.assert_called_once_with()
++        self.assertEqual(dat, drv._stats['multiattach'])
++
+     @mock.patch.object(psutil, "disk_partitions")
+     @mock.patch.object(os, "stat")
+     def test_validate_volume_all_good_prefix_val(self, stat_mock, part_mock):
+diff --git a/cinder/volume/drivers/quobyte.py b/cinder/volume/drivers/quobyte.py
+index 339619854..bd5b995bd 100644
+--- a/cinder/volume/drivers/quobyte.py
++++ b/cinder/volume/drivers/quobyte.py
+@@ -71,7 +71,14 @@ volume_opts = [
+                       ' quobyte_qcow2_volumes and'
+                       ' quobyte_volume_from_snapshot_cache to be set to'
+                       ' True. If one of these is set to False this option is'
+-                      ' ignored.'))
++                      ' ignored.')),
++    cfg.BoolOpt('quobyte_multiattach',
++                default=False,
++                help=('Allows using Cinders multi attach feature with Quobyte.'
++                      ' Note that usage of multiattach with Quobyte requires'
++                      ' using an additional distributed locking service.'
++                      ' Ensure Quobyte volumes used with this option do not'
++                      ' use client caching in their volume configuration.'))
+ ]
+
+ CONF = cfg.CONF
+@@ -700,6 +707,14 @@ class QuobyteDriver(remotefs_drv.RemoteFSSnapDriverDistributed):
+             if self.configuration.quobyte_volume_from_snapshot_cache:
+                 self._ensure_volume_from_snap_cache(mount_path)
+
++    def _update_volume_stats(self):
++        super(QuobyteDriver, self)._update_volume_stats()
++        if self.configuration.quobyte_multiattach:
++            self._stats["multiattach"] = True
++            LOG.info('multiattach for Quobyte is active.')
++        else:
++            self._stats["multiattach"] = False
++
+     def _validate_volume(self, mount_path):
+         """Runs a number of tests on the expect Quobyte mount"""
+         partitions = psutil.disk_partitions(all=True)
