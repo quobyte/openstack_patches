@@ -23,6 +23,12 @@ commands.
 
 # Contents
 
+
+## encry_param_fix
+
+Fixes a Cinder [parameter bug](https://bugs.launchpad.net/cinder/+bug/2042102)
+currently in [review](https://review.opendev.org/c/openstack/cinder/+/899706).
+
 ## multiattach
 
 Allows activating Cinder multi attach with the Quobyte driver.

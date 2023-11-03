@@ -1,0 +1,105 @@
+diff --git a/cinder/tests/unit/volume/drivers/test_quobyte.py b/cinder/tests/unit/volume/drivers/test_quobyte.py
+index c66ba2d8c..897742975 100644
+--- a/cinder/tests/unit/volume/drivers/test_quobyte.py
++++ b/cinder/tests/unit/volume/drivers/test_quobyte.py
+@@ -1005,7 +1005,9 @@ class QuobyteDriverTestCase(test.TestCase):
+         self.mock_object(image_utils, 'qemu_img_info', return_value=img_info)
+         drv._set_rw_permissions = mock.Mock()
+ 
+-        drv._copy_volume_from_snapshot(snapshot, dest_volume, size)
++        drv._copy_volume_from_snapshot(snapshot, dest_volume, size,
++                                       src_encryption_key_id=None,
++                                       new_encryption_key_id=None)
+ 
+         drv._read_info_file.assert_called_once_with(info_path)
+         image_utils.qemu_img_info.assert_called_once_with(snap_path,
+@@ -1063,7 +1065,9 @@ class QuobyteDriverTestCase(test.TestCase):
+         drv._set_rw_permissions = mock.Mock()
+         shutil.copyfile = mock.Mock()
+ 
+-        drv._copy_volume_from_snapshot(snapshot, dest_volume, size)
++        drv._copy_volume_from_snapshot(snapshot, dest_volume, size,
++                                       src_encryption_key_id=None,
++                                       new_encryption_key_id=None)
+ 
+         drv._read_info_file.assert_called_once_with(info_path)
+         image_utils.qemu_img_info.assert_called_once_with(snap_path,
+@@ -1125,7 +1129,9 @@ class QuobyteDriverTestCase(test.TestCase):
+         drv._set_rw_permissions = mock.Mock()
+         drv._create_overlay_volume_from_snapshot = mock.Mock()
+ 
+-        drv._copy_volume_from_snapshot(snapshot, dest_volume, size)
++        drv._copy_volume_from_snapshot(snapshot, dest_volume, size,
++                                       src_encryption_key_id=None,
++                                       new_encryption_key_id=None)
+ 
+         drv._read_info_file.assert_called_once_with(info_path)
+         os_ac_mock.assert_called_once_with(
+@@ -1190,7 +1196,9 @@ class QuobyteDriverTestCase(test.TestCase):
+         drv._set_rw_permissions = mock.Mock()
+         self.mock_object(shutil, 'copyfile')
+ 
+-        drv._copy_volume_from_snapshot(snapshot, dest_volume, size)
++        drv._copy_volume_from_snapshot(snapshot, dest_volume, size,
++                                       src_encryption_key_id=None,
++                                       new_encryption_key_id=None)
+ 
+         drv._read_info_file.assert_called_once_with(info_path)
+         image_utils.qemu_img_info.assert_called_once_with(snap_path,
+@@ -1205,6 +1213,25 @@ class QuobyteDriverTestCase(test.TestCase):
+         shutil.copyfile.assert_called_once_with(cache_path, dest_vol_path)
+         drv._set_rw_permissions.assert_called_once_with(dest_vol_path)
+ 
++    def test_copy_volume_from_snapshot_with_encr(self):
++        # setup vars
++        drv = self._driver
++        src_volume = self._simple_volume()
++        snapshot = self._get_fake_snapshot(src_volume)
++        dest_volume = self._simple_volume(
++            id='c1073000-0000-0000-0000-0000000c1073')
++        size = dest_volume['size']
++
++        # run test
++        self.assertRaises(exception.NotSupportedOperation,
++                          drv._copy_volume_from_snapshot,
++                          snapshot,
++                          dest_volume,
++                          size,
++                          src_encryption_key_id=mock.sentinel.src_key,
++                          new_encryption_key_id=mock.sentinel.dest_key
++                          )
++
+     @ddt.data(['available', True], ['backing-up', True],
+               ['creating', False], ['deleting', False])
+     @ddt.unpack
+diff --git a/cinder/volume/drivers/quobyte.py b/cinder/volume/drivers/quobyte.py
+index db8c9f562..a3b2d62c8 100644
+--- a/cinder/volume/drivers/quobyte.py
++++ b/cinder/volume/drivers/quobyte.py
+@@ -373,7 +373,9 @@ class QuobyteDriver(remotefs_drv.RemoteFSSnapDriverDistributed):
+         return self._create_volume_from_snapshot(volume, snapshot)
+ 
+     @coordination.synchronized('{self.driver_prefix}-{volume.id}')
+-    def _copy_volume_from_snapshot(self, snapshot, volume, volume_size):
++    def _copy_volume_from_snapshot(self, snapshot, volume, volume_size,
++                                   src_encryption_key_id=None,
++                                   new_encryption_key_id=None):
+         """Copy data from snapshot to destination volume.
+ 
+         This is done with a qemu-img convert to raw/qcow2 from the snapshot
+@@ -382,6 +384,12 @@ class QuobyteDriver(remotefs_drv.RemoteFSSnapDriverDistributed):
+         snapshot id are created directly from the cache.
+         """
+ 
++        if src_encryption_key_id or new_encryption_key_id:
++            msg = _("Encryption key %s was provided. Volume "
++                    "encryption is not supported.")
++            raise exception.NotSupportedOperation(
++                message=msg % new_encryption_key_id)
++
+         LOG.debug("snapshot: %(snap)s, volume: %(vol)s, ",
+                   {'snap': snapshot.id,
+                    'vol': volume.id,
+-- 
+2.39.3
+
