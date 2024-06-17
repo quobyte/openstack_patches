@@ -29,6 +29,12 @@ commands.
 Fixes a Cinder [parameter bug](https://bugs.launchpad.net/cinder/+bug/2042102)
 currently in [review](https://review.opendev.org/c/openstack/cinder/+/899706).
 
+## image_to_volume_fix
+
+Fixes a Cinder
+[file format handling bug](https://bugs.launchpad.net/cinder/+bug/2069597)
+currently in [review](https://review.opendev.org/c/openstack/cinder/+/922082).
+
 ## multiattach
 
 Allows activating Cinder multi attach with the Quobyte driver.

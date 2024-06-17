@@ -1,0 +1,174 @@
+diff --git a/cinder/tests/unit/volume/drivers/test_quobyte.py b/cinder/tests/unit/volume/drivers/test_quobyte.py
+index c66ba2d8c..a38e3bfb5 100644
+--- a/cinder/tests/unit/volume/drivers/test_quobyte.py
++++ b/cinder/tests/unit/volume/drivers/test_quobyte.py
+@@ -544,6 +544,34 @@ class QuobyteDriverTestCase(test.TestCase):
+ 
+         self.assertIn(self.TEST_QUOBYTE_VOLUME_WITHOUT_PROTOCOL, drv.shares)
+ 
++    @ddt.data("raw", "qcow2", "foobar")
++    def test_ensure_volume_format(self, fmt):
++        drv = self._driver
++        test_vol = self._simple_volume()
++        qemu_img_info_output = """{
++            "filename": "volume-%s",
++            "format": "%s",
++            "virtual-size": 1073741824,
++            "actual-size": 473000
++        }""" % (self.VOLUME_UUID, fmt)
++
++        img_info = imageutils.QemuImgInfo(qemu_img_info_output, format='json')
++
++        test_utils = self.mock_object(image_utils,
++                                      'qemu_img_info',
++                                      return_value=img_info)
++
++        if fmt == "foobar":
++            self.assertRaises(exception.InvalidVolume,
++                              drv.ensure_volume_format,
++                              test_vol)
++        else:
++            self.assertEqual(fmt, drv.ensure_volume_format(test_vol))
++
++        test_utils.assert_called_once_with(drv.local_path(test_vol),
++                                           force_share=True,
++                                           run_as_root=False)
++
+     def test_ensure_share_mounted(self):
+         """_ensure_share_mounted simple use case."""
+         with mock.patch.object(self._driver, '_get_mount_point_for_share') as \
+@@ -967,6 +995,52 @@ class QuobyteDriverTestCase(test.TestCase):
+                                                               )
+             image_utils.resize_image.assert_called_once_with(volume_path, 3)
+ 
++    @ddt.data(["raw", False],
++              ["raw", True],
++              ["qcow2", False],
++              ["qcow2", True])
++    @ddt.unpack
++    @mock.patch.object(image_utils, "resize_image")
++    @mock.patch.object(image_utils, "fetch_to_volume_format")
++    @mock.patch.object(image_utils, "fixup_disk_format")
++    def test_copy_image_to_volume(self, fmt, sparse_bool,
++                                  mock_fix_df, mock_fetch_tvf, mock_resize_i):
++        drv = self._driver
++        drv.ensure_volume_format = mock.Mock(return_value=fmt)
++        if fmt == 'qcow2':
++            drv.configuration.quobyte_qcow2_volumes = True
++        else:
++            drv.configuration.quobyte_qcow2_volumes = False
++        drv.configuration.volume_dd_blocksize = "1Mb"
++        img_mock = mock.Mock()
++        img_mock.file_format = fmt
++        mock_fix_df.return_value = fmt
++        test_context = mock.Mock()
++        test_vol = self._simple_volume()
++        test_img_serv = mock.Mock()
++        test_img_id = "image-test-id"
++
++        drv.copy_image_to_volume(test_context,
++                                 test_vol,
++                                 test_img_serv,
++                                 test_img_id,
++                                 sparse_bool)
++
++        drv.ensure_volume_format.assert_called_once_with(test_vol)
++        mock_fix_df.assert_called_once_with(fmt)
++        mock_fetch_tvf.assert_called_once_with(
++            test_context,
++            test_img_serv,
++            test_img_id,
++            drv.local_path(test_vol),
++            mock_fix_df(),
++            drv.configuration.volume_dd_blocksize,
++            disable_sparse=sparse_bool
++        )
++        mock_resize_i.assert_called_once_with(drv.local_path(test_vol),
++                                              test_vol.size,
++                                              run_as_root=drv._execute_as_root)
++
+     def test_copy_volume_from_snapshot(self):
+         drv = self._driver
+ 
+diff --git a/cinder/volume/drivers/quobyte.py b/cinder/volume/drivers/quobyte.py
+index db8c9f562..18a17ae15 100644
+--- a/cinder/volume/drivers/quobyte.py
++++ b/cinder/volume/drivers/quobyte.py
+@@ -35,7 +35,7 @@ from cinder import utils
+ from cinder.volume import configuration
+ from cinder.volume.drivers import remotefs as remotefs_drv
+ 
+-VERSION = '1.1.13'
++VERSION = '1.1.14'
+ 
+ LOG = logging.getLogger(__name__)
+ 
+@@ -116,6 +116,7 @@ class QuobyteDriver(remotefs_drv.RemoteFSSnapDriverDistributed):
+         1.1.11 - NAS secure ownership & permissions are now False by default
+         1.1.12 - Ensure the currently configured volume url is always used
+         1.1.13 - Allow creating volumes from snapshots in state 'backing-up'
++        1.1.14 - Handle file formats correctly in copy_image_to_volume
+ 
+     """
+ 
+@@ -499,6 +500,17 @@ class QuobyteDriver(remotefs_drv.RemoteFSSnapDriverDistributed):
+         info_path = self._local_path_volume_info(volume)
+         fileutils.delete_if_exists(info_path)
+ 
++    def ensure_volume_format(self, volume) -> str:
++        """"Validates and returns the file format of the given volume."""
++        volume_path = self.local_path(volume)
++        info = self._qemu_img_info(volume_path, volume.name)
++        backing_fmt = info.file_format
++        if backing_fmt not in ['raw', 'qcow2']:
++            msg = _('Unrecognized backing format: %s')
++            raise exception.InvalidVolume(msg % backing_fmt)
++
++        return backing_fmt
++
+     @utils.synchronized('quobyte', external=False)
+     def create_snapshot(self, snapshot):
+         """Apply locking to the create snapshot operation."""
+@@ -533,6 +545,26 @@ class QuobyteDriver(remotefs_drv.RemoteFSSnapDriverDistributed):
+             'mount_point_base': self.configuration.quobyte_mount_point_base
+         }
+ 
++    def copy_image_to_volume(self, context, volume, image_service, image_id,
++                             disable_sparse=False) -> None:
++        """Fetch the image from image_service and write it to the volume."""
++        if self.configuration.quobyte_qcow2_volumes:
++            volume_format = 'qcow2'
++        else:
++            volume_format = 'raw'
++        qemu_volume_format = image_utils.fixup_disk_format(volume_format)
++        image_path = self.local_path(volume)
++
++        image_utils.fetch_to_volume_format(
++            context, image_service, image_id,
++            image_path, qemu_volume_format,
++            self.configuration.volume_dd_blocksize,
++            disable_sparse=disable_sparse)
++
++        if self.ensure_volume_format(volume) == volume_format:
++            image_utils.resize_image(image_path, volume.size,
++                                     run_as_root=self._execute_as_root)
++
+     @utils.synchronized('quobyte', external=False)
+     def copy_volume_to_image(self, context, volume, image_service, image_meta):
+         self._copy_volume_to_image(context, volume, image_service,
+@@ -546,14 +578,7 @@ class QuobyteDriver(remotefs_drv.RemoteFSSnapDriverDistributed):
+                    % volume['id'])
+             raise exception.ExtendVolumeError(msg)
+ 
+-        volume_path = self.local_path(volume)
+-
+-        info = self._qemu_img_info(volume_path, volume.name)
+-        backing_fmt = info.file_format
+-
+-        if backing_fmt not in ['raw', 'qcow2']:
+-            msg = _('Unrecognized backing format: %s')
+-            raise exception.InvalidVolume(msg % backing_fmt)
++        self.ensure_volume_format(volume)
+ 
+         # qemu-img can resize both raw and qcow2 files
+         active_path = os.path.join(
