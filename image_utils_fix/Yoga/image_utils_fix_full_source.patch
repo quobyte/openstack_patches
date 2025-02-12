@@ -211,3 +211,13 @@ index 9167e03a2..d53637b75 100644
          return int(math.ceil(float(image_size) / units.Gi))
  
      def manage_existing_get_size(self, volume, existing_ref):
+diff --git a/requirements.txt b/requirements.txt
+index 9c5cbc1fd..72487c8cc 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -65,3 +65,5 @@ cryptography>=3.1 # BSD/Apache-2.0
+ cursive>=0.2.2 # Apache-2.0
+ zstd>=1.4.5.1 # BSD
+ boto3>=1.16.51 # Apache-2.0
++# Pin setuptools to allow testing with python 3.9
++setuptools<71
