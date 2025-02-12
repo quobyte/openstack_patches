@@ -35,6 +35,13 @@ Fixes a Cinder
 [file format handling bug](https://bugs.launchpad.net/cinder/+bug/2069597)
 currently in [review](https://review.opendev.org/c/openstack/cinder/+/922082).
 
+## image_utils fix
+
+Fixes a Cinder [image_utils bug](https://bugs.launchpad.net/cinder/+bug/2074377)
+that affects all remotefs based drivers.
+The fix solves the issue for the Quobyte driver. A more generic fix will be
+submitted upstream.
+
 ## multiattach
 
 Allows activating Cinder multi attach with the Quobyte driver.

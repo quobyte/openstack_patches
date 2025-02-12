@@ -1,0 +1,126 @@
+diff --git a/cinder/image/image_utils.py b/cinder/image/image_utils.py
+index e9f5187f2..923aa6951 100644
+--- a/cinder/image/image_utils.py
++++ b/cinder/image/image_utils.py
+@@ -349,7 +349,8 @@ def _convert_image(prefix: tuple,
+                    cipher_spec: dict = None,
+                    passphrase_file: str = None,
+                    compress: bool = False,
+-                   src_passphrase_file: str = None) -> None:
++                   src_passphrase_file: str = None,
++                   allow_qcow2_backing_file: bool = False) -> None:
+     """Convert image to other format.
+ 
+     NOTE: If the qemu-img convert command fails and this function raises an
+@@ -424,8 +425,11 @@ def _convert_image(prefix: tuple,
+     if duration < 1:
+         duration = 1
+     try:
+-        image_size = qemu_img_info(source,
+-                                   run_as_root=run_as_root).virtual_size
++        image_size = qemu_img_info(
++            source,
++            run_as_root=run_as_root,
++            allow_qcow2_backing_file=allow_qcow2_backing_file
++        ).virtual_size
+     except ValueError as e:
+         msg = ("The image was successfully converted, but image size "
+                "is unavailable. src %(src)s, dest %(dest)s. %(error)s")
+@@ -459,7 +463,8 @@ def convert_image(source: str,
+                   compress: bool = False,
+                   src_passphrase_file: str = None,
+                   image_id: str = None,
+-                  data: imageutils.QemuImgInfo = None) -> None:
++                  data: imageutils.QemuImgInfo = None,
++                  allow_qcow2_backing_file: bool = False) -> None:
+     """Convert image to other format.
+ 
+     NOTE: If the qemu-img convert command fails and this function raises an
+@@ -484,7 +489,8 @@ def convert_image(source: str,
+     :raises ImageUnacceptable: when the image fails some format checks
+     :raises ProcessExecutionError: when something goes wrong during conversion
+     """
+-    check_image_format(source, src_format, image_id, data, run_as_root)
++    check_image_format(source, src_format, image_id, data, run_as_root,
++                       allow_qcow2_backing_file)
+ 
+     if not throttle:
+         throttle = throttling.Throttle.get_default()
+@@ -498,7 +504,8 @@ def convert_image(source: str,
+                        cipher_spec=cipher_spec,
+                        passphrase_file=passphrase_file,
+                        compress=compress,
+-                       src_passphrase_file=src_passphrase_file)
++                       src_passphrase_file=src_passphrase_file,
++                       allow_qcow2_backing_file=allow_qcow2_backing_file)
+ 
+ 
+ def resize_image(source: str,
+@@ -722,7 +729,8 @@ def check_image_format(source: str,
+                        src_format: str = None,
+                        image_id: str = None,
+                        data: imageutils.QemuImgInfo = None,
+-                       run_as_root: bool = True) -> None:
++                       run_as_root: bool = True,
++                       allow_qcow2_backing_file: bool = False) -> None:
+     """Do some image format checks.
+ 
+     Verifies that the src_format matches what qemu-img thinks the image
+@@ -742,7 +750,8 @@ def check_image_format(source: str,
+     if image_id is None:
+         image_id = 'internal image'
+     if data is None:
+-        data = qemu_img_info(source, run_as_root=run_as_root)
++        data = qemu_img_info(source, run_as_root=run_as_root,
++                             allow_qcow2_backing_file=allow_qcow2_backing_file)
+ 
+     if data.file_format is None:
+         raise exception.ImageUnacceptable(
+diff --git a/cinder/volume/drivers/quobyte.py b/cinder/volume/drivers/quobyte.py
+index db8c9f562..8ae931aed 100644
+--- a/cinder/volume/drivers/quobyte.py
++++ b/cinder/volume/drivers/quobyte.py
+@@ -413,7 +413,8 @@ class QuobyteDriver(remotefs_drv.RemoteFSSnapDriverDistributed):
+             image_utils.convert_image(path_to_snap_img,
+                                       path_to_new_vol,
+                                       out_format,
+-                                      run_as_root=self._execute_as_root)
++                                      run_as_root=self._execute_as_root,
++                                      allow_qcow2_backing_file=True)
+         else:
+             # create the volume via volume cache
+             if not os.access(path_to_cached_vol, os.F_OK):
+@@ -422,7 +423,8 @@ class QuobyteDriver(remotefs_drv.RemoteFSSnapDriverDistributed):
+                 image_utils.convert_image(path_to_snap_img,
+                                           path_to_cached_vol,
+                                           out_format,
+-                                          run_as_root=self._execute_as_root)
++                                          run_as_root=self._execute_as_root,
++                                          allow_qcow2_backing_file=True)
+                 if self.configuration.quobyte_overlay_volumes:
+                     # NOTE(kaisers): Create a parent symlink to track the
+                     # existence of the parent
+diff --git a/cinder/volume/drivers/remotefs.py b/cinder/volume/drivers/remotefs.py
+index 9167e03a2..d53637b75 100644
+--- a/cinder/volume/drivers/remotefs.py
++++ b/cinder/volume/drivers/remotefs.py
+@@ -1054,7 +1054,8 @@ class RemoteFSSnapDriverBase(RemoteFSDriver):
+                 # or volume data not being stored in raw format
+                 #  (upload_volume assumes raw format input)
+                 image_utils.convert_image(active_file_path, temp_path, 'raw',
+-                                          run_as_root=self._execute_as_root)
++                                          run_as_root=self._execute_as_root,
++                                          allow_qcow2_backing_file=True)
+                 upload_path = temp_path
+             else:
+                 upload_path = active_file_path
+@@ -2150,7 +2151,8 @@ class RemoteFSManageableVolumesMixin(object):
+ 
+     def _get_rounded_manageable_image_size(self, image_path):
+         image_size = image_utils.qemu_img_info(
+-            image_path, run_as_root=self._execute_as_root).virtual_size
++            image_path, run_as_root=self._execute_as_root,
++            allow_qcow2_backing_file=True).virtual_size
+         return int(math.ceil(float(image_size) / units.Gi))
+ 
+     def manage_existing_get_size(self, volume, existing_ref):
