@@ -5,7 +5,8 @@ This patch fixes the Cinder bug
 [899706](https://review.opendev.org/#/c/899706/), fixing a regression
 introduced in the remotefs driver.
 
-Please note that this patch is valid for all releases from Victoria to Bobcat.
+Please note that this patch is valid for all releases from Victoria to Bobcat,
+as well as Epoxy.
 
 This patch applies to stripped packaged installations as well as full source
 tree installations. Slightly different patch commands are used (see below).

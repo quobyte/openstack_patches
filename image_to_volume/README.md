@@ -6,7 +6,8 @@ This patch fixes the Cinder bug
 handling for different image file formats during copy_image_to_volume
 operations in the Quobyte driver.
 
-Please note that this patch is valid for all releases from Antelope to Caracal.
+Please note that this patch is valid for all releases from Antelope to Caracal,
+as well as Epoxy.
 
 This patch applies to stripped packaged installations as well as full source
 tree installations. Slightly different patch commands are used (see below).

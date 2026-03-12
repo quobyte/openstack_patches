@@ -1,0 +1,28 @@
+diff --git a/cinder/volume/drivers/quobyte.py b/cinder/volume/drivers/quobyte.py
+index d7f3bc22e..486cf9b41 100644
+--- a/cinder/volume/drivers/quobyte.py
++++ b/cinder/volume/drivers/quobyte.py
+@@ -383,7 +383,9 @@ class QuobyteDriver(remotefs_drv.RemoteFSSnapDriverDistributed):
+         return self._create_volume_from_snapshot(volume, snapshot)
+ 
+     @coordination.synchronized('{self.driver_prefix}-{volume.id}')
+-    def _copy_volume_from_snapshot(self, snapshot, volume, volume_size):
++    def _copy_volume_from_snapshot(self, snapshot, volume, volume_size,
++                                   src_encryption_key_id=None,
++                                   new_encryption_key_id=None):
+         """Copy data from snapshot to destination volume.
+ 
+         This is done with a qemu-img convert to raw/qcow2 from the snapshot
+@@ -392,6 +394,12 @@ class QuobyteDriver(remotefs_drv.RemoteFSSnapDriverDistributed):
+         snapshot id are created directly from the cache.
+         """
+ 
++        if src_encryption_key_id or new_encryption_key_id:
++            msg = _("Encryption key %s was provided. Volume "
++                    "encryption is not supported.")
++            raise exception.NotSupportedOperation(
++                message=msg % new_encryption_key_id)
++
+         LOG.debug("snapshot: %(snap)s, volume: %(vol)s, ",
+                   {'snap': snapshot.id,
+                    'vol': volume.id,
