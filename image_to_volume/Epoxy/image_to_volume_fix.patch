@@ -1,28 +1,60 @@
 diff --git a/cinder/volume/drivers/quobyte.py b/cinder/volume/drivers/quobyte.py
-index d7f3bc22e..091e0ffe1 100644
+index d7f3bc22e..f5a830ad4 100644
 --- a/cinder/volume/drivers/quobyte.py
 +++ b/cinder/volume/drivers/quobyte.py
-@@ -509,6 +509,17 @@ class QuobyteDriver(remotefs_drv.RemoteFSSnapDriverDistributed):
+@@ -509,6 +509,26 @@ class QuobyteDriver(remotefs_drv.RemoteFSSnapDriverDistributed):
          info_path = self._local_path_volume_info(volume)
          fileutils.delete_if_exists(info_path)
  
 +    def ensure_volume_format(self, volume) -> str:
 +        """Validates and returns the file format of the given volume."""
 +        volume_path = self.local_path(volume)
-+        info = self._qemu_img_info(volume_path, volume.name)
-+        backing_fmt = info.file_format
-+        if backing_fmt not in ['raw', 'qcow2']:
-+            msg = _('Unrecognized backing format: %s')
-+            raise exception.InvalidVolume(msg % backing_fmt)
++        vol_fmt = None
++        admin_metadata = None
 +
-+        return backing_fmt
++        # admin context is required for admin_metadata
++        with volume.obj_as_admin():
++            admin_metadata = volume.admin_metadata
++        if admin_metadata and 'format' in admin_metadata:
++            vol_fmt = admin_metadata['format']
++        else:
++            info = self._qemu_img_info(volume_path, volume.name)
++            vol_fmt = info.file_format
++        if vol_fmt not in ['raw', 'qcow2']:
++            msg = _('Unrecognized backing format: %s')
++            raise exception.InvalidVolume(msg % vol_fmt)
++
++        return vol_fmt
 +
      @utils.synchronized('quobyte', external=False)
      def create_snapshot(self, snapshot):
          """Apply locking to the create snapshot operation."""
-@@ -543,6 +554,33 @@ class QuobyteDriver(remotefs_drv.RemoteFSSnapDriverDistributed):
-             'mount_point_base': self.configuration.quobyte_mount_point_base
-         }
+@@ -521,21 +541,13 @@ class QuobyteDriver(remotefs_drv.RemoteFSSnapDriverDistributed):
+ 
+         # Find active qcow2 file
+         active_file = self.get_active_image_from_info(volume)
+-        path = '%s/%s/%s' % (self.configuration.quobyte_mount_point_base,
+-                             self._get_hash_str(volume.provider_location),
+-                             active_file)
+ 
+         data = {'export': volume.provider_location,
+                 'name': active_file}
+         if volume.provider_location in self.shares:
+             data['options'] = self.shares[volume.provider_location]
+ 
+-        # Test file for raw vs. qcow2 format
+-        info = self._qemu_img_info(path, volume.name)
+-        data['format'] = info.file_format
+-        if data['format'] not in ['raw', 'qcow2']:
+-            msg = _('%s must be a valid raw or qcow2 image.') % path
+-            raise exception.InvalidVolume(msg)
++        data['format'] = self.ensure_volume_format(volume)
+ 
+         return {
+             'driver_volume_type': 'quobyte',
+@@ -548,6 +560,33 @@ class QuobyteDriver(remotefs_drv.RemoteFSSnapDriverDistributed):
+         self._copy_volume_to_image(context, volume, image_service,
+                                    image_meta)
  
 +    def copy_image_to_volume(self, context, volume, image_service, image_id,
 +                             disable_sparse=False) -> None:
@@ -52,9 +84,9 @@ index d7f3bc22e..091e0ffe1 100644
 +                                 run_as_root=self._execute_as_root)
 +
      @utils.synchronized('quobyte', external=False)
-     def copy_volume_to_image(self, context, volume, image_service, image_meta):
-         self._copy_volume_to_image(context, volume, image_service,
-@@ -556,14 +594,7 @@ class QuobyteDriver(remotefs_drv.RemoteFSSnapDriverDistributed):
+     def extend_volume(self, volume, size_gb):
+         if self._is_volume_attached(volume):
+@@ -556,14 +595,7 @@ class QuobyteDriver(remotefs_drv.RemoteFSSnapDriverDistributed):
                     % volume['id'])
              raise exception.ExtendVolumeError(msg)
  
